@@ -38,7 +38,7 @@ func Worker(mapf func(string, string) []KeyValue,
 
 		switch taskReply.TaskName {
 		case "map":
-			log.Printf("Processing map task with input files: %s\n", taskReply.TaskName, taskReply.InputFilePaths)
+			log.Printf("Processing map task with input files: %s\n", taskReply.InputFilePaths)
 			mapf(taskReply.InputFilePaths[0], "")
 		}
 	}
