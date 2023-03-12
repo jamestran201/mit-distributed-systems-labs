@@ -33,6 +33,7 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 			reply.TaskName = "map"
 			reply.NReduceTasks = c.nReduce
 
+			// TODO: Perhaps add a prefix to indicate whether the log message came from the Coordinator or a Worker
 			log.Printf("Assinging map task with input file: %s\n", filePath)
 
 			break
@@ -80,6 +81,8 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	for _, file := range files {
 		c.mapTasks[file] = false
 	}
+
+	log.Printf("Number of reduce tasks is: %d\n", nReduce)
 
 	c.server()
 	return &c

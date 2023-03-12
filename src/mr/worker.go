@@ -4,6 +4,7 @@ import (
 	"hash/fnv"
 	"log"
 	"net/rpc"
+	"os"
 	"time"
 )
 
@@ -11,6 +12,10 @@ import (
 type KeyValue struct {
 	Key   string
 	Value string
+}
+
+func findBucket(key string, nReduceTasks int) int {
+	return ihash(key) % nReduceTasks
 }
 
 // use ihash(key) % NReduce to choose the reduce
@@ -22,8 +27,10 @@ func ihash(key string) int {
 }
 
 // main/mrworker.go calls this function.
-func Worker(mapf func(string, string) []KeyValue,
-	reducef func(string, []string) string) {
+func Worker(
+	mapf func(string, string) []KeyValue,
+	reducef func(string, []string) string,
+) {
 
 	continueRunning := true
 	for continueRunning {
@@ -39,9 +46,32 @@ func Worker(mapf func(string, string) []KeyValue,
 		switch taskReply.TaskName {
 		case "map":
 			log.Printf("Processing map task with input files: %s\n", taskReply.InputFilePaths)
-			mapf(taskReply.InputFilePaths[0], "")
+
+			err := processMapTask(taskReply.InputFilePaths[0], taskReply.NReduceTasks, mapf)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
 		}
 	}
+}
+
+func processMapTask(inputFilePath string, nReduceTasks int, mapf func(string, string) []KeyValue) error {
+	bytes, err := os.ReadFile(inputFilePath)
+	if err != nil {
+		return err
+	}
+
+	results := mapf(inputFilePath, string(bytes))
+	bucketedResults := make([][]KeyValue, nReduceTasks)
+	for _, kv := range results {
+		bucket := findBucket(kv.Key, nReduceTasks)
+		bucketedResults[bucket] = append(bucketedResults[bucket], kv)
+	}
+
+	// TODO: Write bucketedResults to a file
+
+	return nil
 }
 
 func CallGetTask() *GetTaskReply {
