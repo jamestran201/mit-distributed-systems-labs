@@ -19,6 +19,13 @@ type GetTaskReply struct {
 	NReduceTasks   int
 }
 
+type FinishTaskArgs struct {
+	TaskName       string
+	TaskIdentifier string
+}
+
+type FinishTaskReply struct{}
+
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the coordinator.
 // Can't use the current directory since

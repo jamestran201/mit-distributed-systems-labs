@@ -43,6 +43,18 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	return nil
 }
 
+func (c *Coordinator) FinishTask(args *FinishTaskArgs, reply *FinishTaskReply) error {
+	c.mapTaskLock.Lock()
+	defer c.mapTaskLock.Unlock()
+
+	if args.TaskName == "map" {
+		c.mapTasks[args.TaskIdentifier] = true
+		log.Printf("Marked map task for %s as complete\n", args.TaskIdentifier)
+	}
+
+	return nil
+}
+
 // start a thread that listens for RPCs from worker.go
 func (c *Coordinator) server() {
 	rpc.Register(c)

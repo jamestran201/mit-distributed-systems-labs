@@ -1,6 +1,7 @@
 package mr
 
 import (
+	"fmt"
 	"hash/fnv"
 	"log"
 	"net/rpc"
@@ -49,7 +50,6 @@ func Worker(
 
 			err := processMapTask(taskReply.InputFilePaths[0], taskReply.NReduceTasks, mapf)
 			if err != nil {
-				log.Println(err)
 				continue
 			}
 		}
@@ -59,6 +59,8 @@ func Worker(
 func processMapTask(inputFilePath string, nReduceTasks int, mapf func(string, string) []KeyValue) error {
 	bytes, err := os.ReadFile(inputFilePath)
 	if err != nil {
+		log.Println("Error occurred while reading input file: ", inputFilePath)
+		log.Println(err)
 		return err
 	}
 
@@ -69,7 +71,32 @@ func processMapTask(inputFilePath string, nReduceTasks int, mapf func(string, st
 		bucketedResults[bucket] = append(bucketedResults[bucket], kv)
 	}
 
-	// TODO: Write bucketedResults to a file
+	for i := 0; i < len(bucketedResults); i++ {
+		outputFile := fmt.Sprintf("intermediate-%d-*", i)
+		file, err := os.CreateTemp(".", outputFile)
+		if err != nil {
+			log.Println("An error occurred while creating an intermediate result file")
+			log.Println(err)
+			return err
+		}
+
+		defer file.Close()
+
+		for j, kv := range bucketedResults[i] {
+			if j > 0 {
+				file.WriteString("\n")
+			}
+
+			_, err := file.WriteString(fmt.Sprintf("%v %v", kv.Key, kv.Value))
+			if err != nil {
+				log.Println("An error occurred while writing to an intermediate result file")
+				log.Println(err)
+				return err
+			}
+		}
+	}
+
+	CallFinishTask("map", inputFilePath)
 
 	return nil
 }
@@ -82,6 +109,22 @@ func CallGetTask() *GetTaskReply {
 		return reply
 	} else {
 		log.Println("Error occurred while retrieving task from coordinator")
+		return nil
+	}
+}
+
+func CallFinishTask(taskName, taskIdentifier string) *FinishTaskReply {
+	args := &FinishTaskArgs{
+		TaskName:       taskName,
+		TaskIdentifier: taskIdentifier,
+	}
+	reply := &FinishTaskReply{}
+
+	ok := call("Coordinator.FinishTask", args, reply)
+	if ok {
+		return reply
+	} else {
+		log.Println("Error occurred while notifying the coordinator that the task is done")
 		return nil
 	}
 }
