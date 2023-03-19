@@ -31,27 +31,36 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	c.mapTaskLock.Lock()
 	defer c.mapTaskLock.Unlock()
 
-	performingMapTask := false
+	allMapTasksCompleted := true
 	for filePath, taskState := range c.mapTasks {
-		if taskState != unassigned {
+		taskAssigned := false
+		switch taskState {
+		case completed:
+			allMapTasksCompleted = allMapTasksCompleted && true
 			continue
+		case in_progress:
+			allMapTasksCompleted = false
+			continue
+		default:
+			c.mapTasks[filePath] = in_progress
+
+			reply.InputFilePaths = filePath
+			reply.TaskName = "map"
+			reply.NReduceTasks = c.nReduce
+
+			taskAssigned = true
+			allMapTasksCompleted = false
+
+			// TODO: Perhaps add a prefix to indicate whether the log message came from the Coordinator or a Worker
+			log.Printf("Assinging map task with input file: %s\n", filePath)
 		}
 
-		c.mapTasks[filePath] = in_progress
-
-		reply.InputFilePaths = filePath
-		reply.TaskName = "map"
-		reply.NReduceTasks = c.nReduce
-
-		performingMapTask = true
-
-		// TODO: Perhaps add a prefix to indicate whether the log message came from the Coordinator or a Worker
-		log.Printf("Assinging map task with input file: %s\n", filePath)
-
-		break
+		if taskAssigned {
+			break
+		}
 	}
 
-	if performingMapTask {
+	if !allMapTasksCompleted {
 		return nil
 	}
 

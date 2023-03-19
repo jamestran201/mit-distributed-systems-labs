@@ -36,8 +36,7 @@ func Worker(
 	reducef func(string, []string) string,
 ) {
 
-	continueRunning := true
-	for continueRunning {
+	for {
 		time.Sleep(1 * time.Second)
 
 		log.Println("Retrieving task")
@@ -216,6 +215,11 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	sockname := coordinatorSock()
 	c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
+		if strings.Contains(err.Error(), "connection refused") {
+			log.Println("Coordinator is not running. Stopping worker.")
+			os.Exit(0)
+		}
+
 		log.Fatal("dialing:", err)
 	}
 	defer c.Close()
