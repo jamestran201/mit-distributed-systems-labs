@@ -1,11 +1,14 @@
 package mr
 
 import (
+	"bufio"
 	"fmt"
 	"hash/fnv"
 	"log"
 	"net/rpc"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -48,7 +51,14 @@ func Worker(
 		case "map":
 			log.Printf("Processing map task with input files: %s\n", taskReply.InputFilePaths)
 
-			err := processMapTask(taskReply.InputFilePaths[0], taskReply.NReduceTasks, mapf)
+			err := processMapTask(taskReply.InputFilePaths, taskReply.NReduceTasks, mapf)
+			if err != nil {
+				continue
+			}
+		case "reduce":
+			log.Printf("Processing reduce task with input files: %s\n", taskReply.InputFilePaths)
+
+			err := processReduceTask(taskReply.InputFilePaths, reducef)
 			if err != nil {
 				continue
 			}
@@ -72,7 +82,7 @@ func processMapTask(inputFilePath string, nReduceTasks int, mapf func(string, st
 	}
 
 	for i := 0; i < len(bucketedResults); i++ {
-		outputFile := fmt.Sprintf("intermediate-%d-*", i)
+		outputFile := fmt.Sprintf("mr-intermediate-%d-*", i)
 		file, err := os.CreateTemp(".", outputFile)
 		if err != nil {
 			log.Println("An error occurred while creating an intermediate result file")
@@ -97,6 +107,75 @@ func processMapTask(inputFilePath string, nReduceTasks int, mapf func(string, st
 	}
 
 	CallFinishTask("map", inputFilePath)
+
+	return nil
+}
+
+func processReduceTask(inputFilePrefix string, reducef func(string, []string) string) error {
+	// Read intermediate result files
+
+	pattern := fmt.Sprintf("%s*", inputFilePrefix)
+	fileNames, err := filepath.Glob(pattern)
+	if err != nil {
+		log.Println("An error occurred while retrieving the list of intermediate files")
+		log.Println(err)
+		return err
+	}
+
+	valuesByKey := make(map[string][]string)
+
+	for _, fileName := range fileNames {
+		file, err := os.Open(fileName)
+		if err != nil {
+			log.Printf("Error opening intermediate file: %s\n", fileName)
+			return err
+		}
+
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			tokens := strings.Split(line, " ")
+			key := tokens[0]
+			value := tokens[1]
+
+			if valuesByKey[key] == nil {
+				valuesByKey[key] = make([]string, 0)
+			}
+
+			valuesByKey[key] = append(valuesByKey[key], value)
+		}
+	}
+
+	// Write reduce results to output file
+
+	results := map[string]string{}
+	for key, values := range valuesByKey {
+		results[key] = reducef(key, values)
+	}
+
+	bucket := strings.Split(inputFilePrefix, "-")[2]
+	outputFileName := fmt.Sprintf("mr-out-%s", bucket)
+	outFile, err := os.Create(outputFileName)
+	if err != nil {
+		log.Println("An error occurred while creating an output file")
+		log.Println(err)
+		return err
+	}
+
+	defer outFile.Close()
+
+	for key, value := range results {
+		_, err := outFile.WriteString(fmt.Sprintf("%v %v\n", key, value))
+		if err != nil {
+			log.Println("An error occurred while writing to an output file")
+			log.Println(err)
+			return err
+		}
+	}
+
+	CallFinishTask("reduce", bucket)
 
 	return nil
 }

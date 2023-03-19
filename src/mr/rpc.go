@@ -15,7 +15,7 @@ type GetTaskArgs struct{}
 
 type GetTaskReply struct {
 	TaskName       string
-	InputFilePaths []string
+	InputFilePaths string
 	NReduceTasks   int
 }
 

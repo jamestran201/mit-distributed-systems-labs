@@ -1,11 +1,13 @@
 package mr
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/rpc"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -18,11 +20,11 @@ const (
 )
 
 type Coordinator struct {
-	mapTasks map[string]taskState
-	// reduceTasks    map[int][]string
-	nReduce     int
-	mapTaskLock sync.Mutex
-	// reduceTaskLock sync.Mutex
+	mapTasks       map[string]taskState
+	reduceTasks    []taskState
+	nReduce        int
+	mapTaskLock    sync.Mutex
+	reduceTaskLock sync.Mutex
 }
 
 func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
@@ -37,7 +39,7 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 
 		c.mapTasks[filePath] = in_progress
 
-		reply.InputFilePaths = []string{filePath}
+		reply.InputFilePaths = filePath
 		reply.TaskName = "map"
 		reply.NReduceTasks = c.nReduce
 
@@ -53,16 +55,46 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 		return nil
 	}
 
+	c.reduceTaskLock.Lock()
+	defer c.reduceTaskLock.Unlock()
+
+	for i, taskState := range c.reduceTasks {
+		if taskState != unassigned {
+			continue
+		}
+
+		c.reduceTasks[i] = in_progress
+
+		reply.TaskName = "reduce"
+		reply.InputFilePaths = fmt.Sprintf("mr-intermediate-%d", i)
+
+		log.Printf("Assigning reduce task for bucket: %d\n", i)
+		break
+	}
+
 	return nil
 }
 
 func (c *Coordinator) FinishTask(args *FinishTaskArgs, reply *FinishTaskReply) error {
-	c.mapTaskLock.Lock()
-	defer c.mapTaskLock.Unlock()
-
 	if args.TaskName == "map" {
+		c.mapTaskLock.Lock()
+		defer c.mapTaskLock.Unlock()
+
 		c.mapTasks[args.TaskIdentifier] = completed
 		log.Printf("Marked map task for %s as complete\n", args.TaskIdentifier)
+	} else if args.TaskName == "reduce" {
+		c.reduceTaskLock.Lock()
+		defer c.reduceTaskLock.Unlock()
+
+		index, err := strconv.Atoi(args.TaskIdentifier)
+		if err != nil {
+			log.Println("Error occurred while converting reduce task identifier to integer")
+			log.Println(err)
+			return err
+		}
+
+		c.reduceTasks[index] = completed
+		log.Printf("Marked reduce task for bucket %d as complete\n", index)
 	}
 
 	return nil
@@ -86,7 +118,7 @@ func (c *Coordinator) server() {
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
 	done := true
-	for _, taskState := range c.mapTasks {
+	for _, taskState := range c.reduceTasks {
 		done = done && (taskState == completed)
 	}
 
@@ -98,13 +130,17 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{
-		mapTasks: map[string]taskState{},
-		// reduceTasks: []task{},
-		nReduce: nReduce,
+		mapTasks:    map[string]taskState{},
+		reduceTasks: make([]taskState, nReduce),
+		nReduce:     nReduce,
 	}
 
 	for _, file := range files {
 		c.mapTasks[file] = unassigned
+	}
+
+	for i := 0; i < nReduce; i++ {
+		c.reduceTasks[i] = unassigned
 	}
 
 	log.Printf("Number of reduce tasks is: %d\n", nReduce)
