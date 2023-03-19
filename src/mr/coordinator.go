@@ -28,6 +28,17 @@ type Coordinator struct {
 }
 
 func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
+	allMapTasksCompleted := c.assignMapTask(args, reply)
+	if !allMapTasksCompleted {
+		return nil
+	}
+
+	c.assignReduceTask(args, reply)
+
+	return nil
+}
+
+func (c *Coordinator) assignMapTask(args *GetTaskArgs, reply *GetTaskReply) bool {
 	c.mapTaskLock.Lock()
 	defer c.mapTaskLock.Unlock()
 
@@ -60,10 +71,10 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 		}
 	}
 
-	if !allMapTasksCompleted {
-		return nil
-	}
+	return allMapTasksCompleted
+}
 
+func (c *Coordinator) assignReduceTask(args *GetTaskArgs, reply *GetTaskReply) {
 	c.reduceTaskLock.Lock()
 	defer c.reduceTaskLock.Unlock()
 
@@ -80,8 +91,6 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 		log.Printf("Assigning reduce task for bucket: %d\n", i)
 		break
 	}
-
-	return nil
 }
 
 func (c *Coordinator) FinishTask(args *FinishTaskArgs, reply *FinishTaskReply) error {
