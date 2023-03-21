@@ -183,6 +183,9 @@ func (c *Coordinator) startTimeoutRoutine() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
+	c.reduceTaskLock.Lock()
+	defer c.reduceTaskLock.Unlock()
+
 	done := true
 	for _, task := range c.reduceTasks {
 		done = done && (task.state == completed)
