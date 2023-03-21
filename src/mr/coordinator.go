@@ -20,6 +20,8 @@ const (
 	completed
 )
 
+const timeoutDuration = 10 * time.Second
+
 type Task struct {
 	state     taskState
 	timeoutAt time.Time
@@ -31,6 +33,8 @@ type Coordinator struct {
 	nReduce        int
 	mapTaskLock    sync.Mutex
 	reduceTaskLock sync.Mutex
+	ticker         *time.Ticker
+	doneChan       chan bool
 }
 
 func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
@@ -60,6 +64,7 @@ func (c *Coordinator) assignMapTask(args *GetTaskArgs, reply *GetTaskReply) bool
 			continue
 		default:
 			task.state = in_progress
+			task.timeoutAt = time.Now().Add(timeoutDuration)
 
 			reply.InputFilePaths = filePath
 			reply.TaskName = "map"
@@ -90,6 +95,7 @@ func (c *Coordinator) assignReduceTask(args *GetTaskArgs, reply *GetTaskReply) {
 		}
 
 		task.state = in_progress
+		task.timeoutAt = time.Now().Add(timeoutDuration)
 
 		reply.TaskName = "reduce"
 		reply.InputFilePaths = fmt.Sprintf("mr-intermediate-%d", i)
@@ -142,6 +148,38 @@ func (c *Coordinator) server() {
 	go http.Serve(l, nil)
 }
 
+func (c *Coordinator) startTimeoutRoutine() {
+	go func() {
+		for {
+			select {
+			case <-c.ticker.C:
+				c.mapTaskLock.Lock()
+				for filePath, task := range c.mapTasks {
+					if task.state == in_progress && time.Now().After(task.timeoutAt) {
+						task.state = unassigned
+
+						log.Printf("Map task for %s timed out.\n", filePath)
+					}
+				}
+				c.mapTaskLock.Unlock()
+
+				c.reduceTaskLock.Lock()
+				for i, task := range c.reduceTasks {
+					if task.state == in_progress && time.Now().After(task.timeoutAt) {
+						task.state = unassigned
+						task.timeoutAt = time.Now().Add(timeoutDuration)
+
+						log.Printf("Reduce task for bucket %d timed out.\n", i)
+					}
+				}
+				c.reduceTaskLock.Unlock()
+			case <-c.doneChan:
+				return
+			}
+		}
+	}()
+}
+
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
@@ -161,20 +199,21 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		mapTasks:    map[string]*Task{},
 		reduceTasks: make([]*Task, nReduce),
 		nReduce:     nReduce,
+		ticker:      time.NewTicker(timeoutDuration),
+		doneChan:    make(chan bool),
 	}
 
 	for _, file := range files {
 		c.mapTasks[file] = &Task{state: unassigned, timeoutAt: time.Now()}
-		// c.mapTasks[file] = unassigned
 	}
 
 	for i := 0; i < nReduce; i++ {
 		c.reduceTasks[i] = &Task{state: unassigned, timeoutAt: time.Now()}
-		// c.reduceTasks[i] = unassigned
 	}
 
 	log.Printf("Number of reduce tasks is: %d\n", nReduce)
 
 	c.server()
+	c.startTimeoutRoutine()
 	return &c
 }
