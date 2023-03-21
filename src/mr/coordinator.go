@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type taskState int
@@ -19,9 +20,14 @@ const (
 	completed
 )
 
+type Task struct {
+	state     taskState
+	timeoutAt time.Time
+}
+
 type Coordinator struct {
-	mapTasks       map[string]taskState
-	reduceTasks    []taskState
+	mapTasks       map[string]*Task
+	reduceTasks    []*Task
 	nReduce        int
 	mapTaskLock    sync.Mutex
 	reduceTaskLock sync.Mutex
@@ -43,9 +49,9 @@ func (c *Coordinator) assignMapTask(args *GetTaskArgs, reply *GetTaskReply) bool
 	defer c.mapTaskLock.Unlock()
 
 	allMapTasksCompleted := true
-	for filePath, taskState := range c.mapTasks {
+	for filePath, task := range c.mapTasks {
 		taskAssigned := false
-		switch taskState {
+		switch task.state {
 		case completed:
 			allMapTasksCompleted = allMapTasksCompleted && true
 			continue
@@ -53,7 +59,7 @@ func (c *Coordinator) assignMapTask(args *GetTaskArgs, reply *GetTaskReply) bool
 			allMapTasksCompleted = false
 			continue
 		default:
-			c.mapTasks[filePath] = in_progress
+			task.state = in_progress
 
 			reply.InputFilePaths = filePath
 			reply.TaskName = "map"
@@ -78,12 +84,12 @@ func (c *Coordinator) assignReduceTask(args *GetTaskArgs, reply *GetTaskReply) {
 	c.reduceTaskLock.Lock()
 	defer c.reduceTaskLock.Unlock()
 
-	for i, taskState := range c.reduceTasks {
-		if taskState != unassigned {
+	for i, task := range c.reduceTasks {
+		if task.state != unassigned {
 			continue
 		}
 
-		c.reduceTasks[i] = in_progress
+		task.state = in_progress
 
 		reply.TaskName = "reduce"
 		reply.InputFilePaths = fmt.Sprintf("mr-intermediate-%d", i)
@@ -98,7 +104,9 @@ func (c *Coordinator) FinishTask(args *FinishTaskArgs, reply *FinishTaskReply) e
 		c.mapTaskLock.Lock()
 		defer c.mapTaskLock.Unlock()
 
-		c.mapTasks[args.TaskIdentifier] = completed
+		task := c.mapTasks[args.TaskIdentifier]
+		task.state = completed
+
 		log.Printf("Marked map task for %s as complete\n", args.TaskIdentifier)
 	} else if args.TaskName == "reduce" {
 		c.reduceTaskLock.Lock()
@@ -111,7 +119,9 @@ func (c *Coordinator) FinishTask(args *FinishTaskArgs, reply *FinishTaskReply) e
 			return err
 		}
 
-		c.reduceTasks[index] = completed
+		task := c.reduceTasks[index]
+		task.state = completed
+
 		log.Printf("Marked reduce task for bucket %d as complete\n", index)
 	}
 
@@ -136,8 +146,8 @@ func (c *Coordinator) server() {
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
 	done := true
-	for _, taskState := range c.reduceTasks {
-		done = done && (taskState == completed)
+	for _, task := range c.reduceTasks {
+		done = done && (task.state == completed)
 	}
 
 	return done
@@ -148,17 +158,19 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{
-		mapTasks:    map[string]taskState{},
-		reduceTasks: make([]taskState, nReduce),
+		mapTasks:    map[string]*Task{},
+		reduceTasks: make([]*Task, nReduce),
 		nReduce:     nReduce,
 	}
 
 	for _, file := range files {
-		c.mapTasks[file] = unassigned
+		c.mapTasks[file] = &Task{state: unassigned, timeoutAt: time.Now()}
+		// c.mapTasks[file] = unassigned
 	}
 
 	for i := 0; i < nReduce; i++ {
-		c.reduceTasks[i] = unassigned
+		c.reduceTasks[i] = &Task{state: unassigned, timeoutAt: time.Now()}
+		// c.reduceTasks[i] = unassigned
 	}
 
 	log.Printf("Number of reduce tasks is: %d\n", nReduce)
