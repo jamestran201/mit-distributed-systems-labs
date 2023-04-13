@@ -28,6 +28,13 @@ import (
 	"6.5840/labrpc"
 )
 
+type serverState int
+
+const (
+	follower serverState = iota
+	candidate
+	leader
+)
 
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -61,7 +68,10 @@ type Raft struct {
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
-
+	currentTerm       uint64
+	votedFor          int
+	state             serverState
+	heartBeatReceived bool
 }
 
 // return currentTerm and whether this server
@@ -92,7 +102,6 @@ func (rf *Raft) persist() {
 	// rf.persister.Save(raftstate, nil)
 }
 
-
 // restore previously persisted state.
 func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
@@ -113,7 +122,6 @@ func (rf *Raft) readPersist(data []byte) {
 	// }
 }
 
-
 // the service says it has created a snapshot that has
 // all info up to and including index. this means the
 // service no longer needs the log through (and including)
@@ -122,7 +130,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	// Your code here (2D).
 
 }
-
 
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
@@ -173,7 +180,6 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	return ok
 }
 
-
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
@@ -192,7 +198,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := true
 
 	// Your code here (2B).
-
 
 	return index, term, isLeader
 }
@@ -218,15 +223,30 @@ func (rf *Raft) killed() bool {
 
 func (rf *Raft) ticker() {
 	for rf.killed() == false {
-
 		// Your code here (2A)
 		// Check if a leader election should be started.
-
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
 		ms := 50 + (rand.Int63() % 300)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
+
+		if rf.state == leader {
+			continue
+		}
+
+		if rf.heartBeatReceived {
+			// A heartbeat was received from the leader in the last election timeout period.
+			// Reset the heartbeat flag for the next election timeout period.
+			rf.heartBeatReceived = false
+		} else {
+			// Did not receive a heartbeat from the leader in the last election timeout period.
+			// Become a candidate and start an election.
+			rf.state = candidate
+			rf.currentTerm++
+			rf.votedFor = rf.me
+			// rf.sendRequestVote()
+		}
 	}
 }
 
@@ -247,13 +267,16 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
+	rf.currentTerm = 0
+	rf.votedFor = -1
+	rf.state = follower
+	rf.heartBeatReceived = false
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
-
 
 	return rf
 }
