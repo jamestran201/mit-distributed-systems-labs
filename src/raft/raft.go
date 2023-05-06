@@ -284,6 +284,7 @@ func (rf *Raft) handleRequestVoteResponses(term int, responseCh chan *RequestVot
 			select {
 			case reply := <-responseCh:
 				responsesReceived++
+				rf.log(fmt.Sprintf("Received %d RequestVote responses", responsesReceived))
 
 				if !reply.RequestCompleted {
 					rf.log("A RequestVote request could not be processed successfully, skipping")
@@ -359,7 +360,7 @@ func (rf *Raft) sendRequestVote(server int, ch chan *RequestVoteReply, args *Req
 		return
 	}
 
-	rf.log(fmt.Sprintf("Sending requestVote to %d", server))
+	rf.log(fmt.Sprintf("Sending RequestVote to %d", server))
 
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	reply.RequestCompleted = ok
@@ -384,7 +385,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.log(fmt.Sprintf("Received requestVote from %d", args.CandidateId))
+	rf.log(fmt.Sprintf("Received RequestVote from %d", args.CandidateId))
 
 	if args.Term < rf.currentTerm {
 		rf.log(fmt.Sprintf("Rejected RequestVote from %d because of stale term", args.CandidateId))
