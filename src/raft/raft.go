@@ -170,7 +170,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // should call killed() to check whether it should stop.
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
-	// Your code here, if desired.
+
+	rf.log("Server is killed")
 }
 
 func (rf *Raft) killed() bool {
@@ -186,9 +187,10 @@ func (rf *Raft) ticker() {
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
 		ms := 400 + (rand.Int63() % 800)
-		time.Sleep(time.Duration(ms) * time.Millisecond)
+		rf.log(fmt.Sprintf("Current election timeout is %d milliseconds", ms))
 
-		fmt.Println("Election timeout period elapsed for server", rf.me)
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+		rf.log("Election timeout period elapsed")
 
 		rf.considerStartingElection()
 	}
@@ -199,23 +201,23 @@ func (rf *Raft) considerStartingElection() {
 	defer rf.mu.Unlock()
 
 	if rf.state == leader {
-		fmt.Printf("Server %d is leader, skipping election\n", rf.me)
+		rf.log("Already leader, skipping election")
 		return
 	}
 
 	switch rf.state {
 	case follower:
 		if !rf.receivedRpcFromPeer {
-			fmt.Printf("Follower %d did not receive RPC from peer, starting election\n", rf.me)
+			rf.log("Did not receive RPC from peer, starting election")
 
 			rf.startElection()
 		} else {
-			fmt.Printf("Follower %d received RPC from peer, skipping election\n", rf.me)
+			rf.log("Received RPC from peer, skipping election")
 		}
 
 		rf.receivedRpcFromPeer = false
 	case candidate:
-		fmt.Printf("Candidate %d did not become leader in election timeout period, starting new election\n", rf.me)
+		rf.log("Candidate did not win election within the election timeout period, starting new election")
 
 		rf.startElection()
 	}
@@ -229,7 +231,7 @@ func (rf *Raft) startElection() {
 }
 
 func (rf *Raft) requestVotes(term int) {
-	fmt.Printf("Candidate %d is requesting votes\n", rf.me)
+	rf.log("Requesting votes")
 
 	responseCh := make(chan *RequestVoteReply, len(rf.peers)-1)
 	for i := 0; i < len(rf.peers); i++ {
@@ -240,10 +242,9 @@ func (rf *Raft) requestVotes(term int) {
 		shouldExit := false
 		withLock(&rf.mu, func() {
 			if rf.currentTerm != term || rf.state != candidate {
-				fmt.Printf(
-					"Aborting requestVotes routine for candidate %d.\nCurrent term: %d, given term: %d.\nCurrent state: %d\n",
-					rf.me, rf.currentTerm, term, rf.state,
-				)
+				rf.log(fmt.Sprintf(
+					"Candidate state changed, aborting requestVotes routine.\nCurrent term: %d, given term: %d.\nCurrent state: %d\n", rf.currentTerm, term, rf.state,
+				))
 				shouldExit = true
 				return
 			}
@@ -271,9 +272,11 @@ func (rf *Raft) handleRequestVoteResponses(term int, responseCh chan *RequestVot
 		shouldExit := false
 		shouldSkip := false
 
+		// rf.log(fmt.Sprintf("Waiting for RequestVote response. Current term: %d, Votes: %d, Responses received: %d", rf.currentTerm, votes, responsesReceived))
+
 		withLock(&rf.mu, func() {
 			if rf.state != candidate || rf.currentTerm != term {
-				fmt.Printf("Server %d state is outdated, exiting requestVotes routine\n", rf.me)
+				rf.log("State is outdated, exiting requestVotes routine")
 				shouldExit = true
 				return
 			}
@@ -283,13 +286,13 @@ func (rf *Raft) handleRequestVoteResponses(term int, responseCh chan *RequestVot
 				responsesReceived++
 
 				if !reply.RequestCompleted {
-					fmt.Println("A requestVote could not be processed successfully, skipping")
+					rf.log("A RequestVote request could not be processed successfully, skipping")
 					shouldSkip = true
 					return
 				}
 
 				if reply.Term > rf.currentTerm {
-					fmt.Printf("Received RequestVote response from server with higher term. Reset server %d to follower\n", rf.me)
+					rf.log("Received RequestVote response from server with higher term. Reset state to follower")
 					rf.resetToFollower(reply.Term)
 					shouldExit = true
 					return
@@ -297,7 +300,7 @@ func (rf *Raft) handleRequestVoteResponses(term int, responseCh chan *RequestVot
 
 				if reply.VoteGranted {
 					votes++
-					fmt.Printf("Candidate %d received a vote\n", rf.me)
+					rf.log("Received vote from peer")
 				}
 			default:
 			}
@@ -306,10 +309,10 @@ func (rf *Raft) handleRequestVoteResponses(term int, responseCh chan *RequestVot
 				rf.state = leader
 				go rf.appendEntriesFanout(rf.currentTerm)
 
-				fmt.Printf("Candidate %d became leader. Current term: %d\n", rf.me, rf.currentTerm)
+				rf.log(fmt.Sprintf("Promoted to leader. Current term: %d", rf.currentTerm))
 				shouldExit = true
-			} else if responsesReceived == len(rf.peers)-1 {
-				fmt.Printf("Candidate %d did not receive enough votes to become leader. Current term: %d\n", rf.me, rf.currentTerm)
+			} else if responsesReceived >= len(rf.peers)-1 {
+				rf.log(fmt.Sprintf("Candidate did not receive enough votes to become leader. Current term: %d", rf.currentTerm))
 				shouldExit = true
 			}
 		})
@@ -356,7 +359,7 @@ func (rf *Raft) sendRequestVote(server int, ch chan *RequestVoteReply, args *Req
 		return
 	}
 
-	fmt.Printf("Server %d sending requestVote to %d\n", rf.me, server)
+	rf.log(fmt.Sprintf("Sending requestVote to %d", server))
 
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	reply.RequestCompleted = ok
@@ -382,16 +385,16 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	defer rf.mu.Unlock()
 
 	rf.receivedRpcFromPeer = true
-	fmt.Printf("Server %d received requestVote from %d\n", rf.me, args.CandidateId)
+	rf.log(fmt.Sprintf("Received requestVote from %d", args.CandidateId))
 
 	if args.Term < rf.currentTerm {
-		fmt.Printf("Server %d rejected requestVote from %d because of stale term\n", rf.me, args.CandidateId)
+		rf.log(fmt.Sprintf("Rejected RequestVote from %d because of stale term", args.CandidateId))
 
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
 		return
 	} else if args.Term > rf.currentTerm {
-		fmt.Printf("Received RequestVote from server with higher term. Reset server %d to follower\n", rf.me)
+		rf.log("Received RequestVote from server with higher term. Reset state to follower")
 		rf.resetToFollower(args.Term)
 	}
 
@@ -401,20 +404,21 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = true
 
-		fmt.Printf("Server %d voted for %d\n", rf.me, args.CandidateId)
+		rf.log(fmt.Sprintf("Voted for %d", args.CandidateId))
 		return
 	}
 
 	reply.Term = rf.currentTerm
 	reply.VoteGranted = false
 
-	fmt.Printf("Server %d rejected requestVote from %d because it already voted for %d\n", rf.me, args.CandidateId, rf.votedFor)
+	rf.log(fmt.Sprintf("Rejected RequestVote from %d because it already voted for %d", args.CandidateId, rf.votedFor))
 }
 
 func (rf *Raft) appendEntriesFanout(term int) {
 	for !rf.killed() {
-		responseCh := make(chan *AppendEntriesReply, len(rf.peers)-1)
+		rf.log("Sending AppendEntries to follower")
 
+		responseCh := make(chan *AppendEntriesReply, len(rf.peers)-1)
 		for i := range rf.peers {
 			if rf.killed() {
 				return
@@ -425,6 +429,7 @@ func (rf *Raft) appendEntriesFanout(term int) {
 				shouldExit = rf.state != leader
 			})
 			if shouldExit {
+				rf.log("Exiting AppendEntriesFanout routine because server is no longer the leader")
 				return
 			}
 
@@ -449,7 +454,7 @@ func (rf *Raft) handleAppendEntriesResponses(term int, responseCh chan *AppendEn
 
 		withLock(&rf.mu, func() {
 			if rf.state != leader {
-				fmt.Printf("Server %d is no longer the leader, exiting handleAppendEntriesResponses routine\n", rf.me)
+				rf.log("Server is no longer the leader, exiting handleAppendEntriesResponses routine")
 				shouldExit = true
 				return
 			}
@@ -459,13 +464,13 @@ func (rf *Raft) handleAppendEntriesResponses(term int, responseCh chan *AppendEn
 				responsesReceived++
 
 				if !reply.RequestCompleted {
-					fmt.Println("An AppendEntry request could not be processed successfully, skipping")
+					rf.log("An AppendEntry request could not be processed successfully, skipping")
 					shouldSkip = true
 					return
 				}
 
 				if reply.Term > rf.currentTerm {
-					fmt.Printf("Received AppendEntries response from server with higher term. Reset server %d to follower\n", rf.me)
+					rf.log("Received AppendEntries response from server with higher term. Reset state to follower")
 					rf.resetToFollower(reply.Term)
 					shouldExit = true
 					return
@@ -489,7 +494,7 @@ func (rf *Raft) sendAppendEntries(server int, ch chan *AppendEntriesReply, args 
 		return
 	}
 
-	fmt.Printf("Server %d sending AppendEntries to %d\n", rf.me, server)
+	rf.log(fmt.Sprintf("Sending AppendEntries to %d", server))
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	reply.RequestCompleted = ok
@@ -513,6 +518,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	defer rf.mu.Unlock()
 
 	rf.receivedRpcFromPeer = true
+	rf.log(fmt.Sprintf("Received AppendEntries from %d", args.LeaderId))
 
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
@@ -521,7 +527,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	if args.Term > rf.currentTerm || rf.state == candidate {
-		fmt.Printf("Received AppendEntries from server with higher term. Reset server %d to follower\n", rf.me)
+		rf.log("Received AppendEntries from server with higher term. Reset state to follower")
 		rf.resetToFollower(args.Term)
 	}
 
@@ -533,6 +539,10 @@ func (rf *Raft) resetToFollower(term int) {
 	rf.state = follower
 	rf.currentTerm = term
 	rf.votedFor = -1
+}
+
+func (rf *Raft) log(msg string) {
+	fmt.Printf("Server %d - %s\n", rf.me, msg)
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -560,7 +570,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	fmt.Println("Starting server", rf.me)
+	rf.log("Starting server")
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
