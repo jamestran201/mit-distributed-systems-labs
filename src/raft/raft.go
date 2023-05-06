@@ -185,7 +185,7 @@ func (rf *Raft) ticker() {
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
-		ms := 50 + (rand.Int63() % 300)
+		ms := 400 + (rand.Int63() % 800)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 
 		fmt.Println("Election timeout period elapsed for server", rf.me)
@@ -266,6 +266,7 @@ func (rf *Raft) requestVotes(term int) {
 func (rf *Raft) handleRequestVoteResponses(term int, responseCh chan *RequestVoteReply) {
 	// Start at 1 because the candidate votes for itself
 	votes := 1
+	responsesReceived := 0
 	for !rf.killed() {
 		shouldExit := false
 		shouldSkip := false
@@ -279,6 +280,8 @@ func (rf *Raft) handleRequestVoteResponses(term int, responseCh chan *RequestVot
 
 			select {
 			case reply := <-responseCh:
+				responsesReceived++
+
 				if !reply.RequestCompleted {
 					fmt.Println("A requestVote could not be processed successfully, skipping")
 					shouldSkip = true
@@ -286,6 +289,7 @@ func (rf *Raft) handleRequestVoteResponses(term int, responseCh chan *RequestVot
 				}
 
 				if reply.Term > rf.currentTerm {
+					fmt.Printf("Received RequestVote response from server with higher term. Reset server %d to follower\n", rf.me)
 					rf.resetToFollower(reply.Term)
 					shouldExit = true
 					return
@@ -300,7 +304,12 @@ func (rf *Raft) handleRequestVoteResponses(term int, responseCh chan *RequestVot
 
 			if votes > len(rf.peers)/2 {
 				rf.state = leader
+				go rf.appendEntriesFanout(rf.currentTerm)
+
 				fmt.Printf("Candidate %d became leader. Current term: %d\n", rf.me, rf.currentTerm)
+				shouldExit = true
+			} else if responsesReceived == len(rf.peers)-1 {
+				fmt.Printf("Candidate %d did not receive enough votes to become leader. Current term: %d\n", rf.me, rf.currentTerm)
 				shouldExit = true
 			}
 		})
@@ -382,6 +391,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = false
 		return
 	} else if args.Term > rf.currentTerm {
+		fmt.Printf("Received RequestVote from server with higher term. Reset server %d to follower\n", rf.me)
 		rf.resetToFollower(args.Term)
 	}
 
@@ -401,12 +411,128 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	fmt.Printf("Server %d rejected requestVote from %d because it already voted for %d\n", rf.me, args.CandidateId, rf.votedFor)
 }
 
+func (rf *Raft) appendEntriesFanout(term int) {
+	for !rf.killed() {
+		responseCh := make(chan *AppendEntriesReply, len(rf.peers)-1)
+
+		for i := range rf.peers {
+			if rf.killed() {
+				return
+			}
+
+			shouldExit := false
+			withLock(&rf.mu, func() {
+				shouldExit = rf.state != leader
+			})
+			if shouldExit {
+				return
+			}
+
+			if i == rf.me {
+				continue
+			}
+
+			go rf.sendAppendEntries(i, responseCh, &AppendEntriesArgs{Term: term, LeaderId: rf.me}, &AppendEntriesReply{})
+		}
+
+		go rf.handleAppendEntriesResponses(term, responseCh)
+
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+func (rf *Raft) handleAppendEntriesResponses(term int, responseCh chan *AppendEntriesReply) {
+	responsesReceived := 0
+	for !rf.killed() && responsesReceived < len(rf.peers)-1 {
+		shouldExit := false
+		shouldSkip := false
+
+		withLock(&rf.mu, func() {
+			if rf.state != leader {
+				fmt.Printf("Server %d is no longer the leader, exiting handleAppendEntriesResponses routine\n", rf.me)
+				shouldExit = true
+				return
+			}
+
+			select {
+			case reply := <-responseCh:
+				responsesReceived++
+
+				if !reply.RequestCompleted {
+					fmt.Println("An AppendEntry request could not be processed successfully, skipping")
+					shouldSkip = true
+					return
+				}
+
+				if reply.Term > rf.currentTerm {
+					fmt.Printf("Received AppendEntries response from server with higher term. Reset server %d to follower\n", rf.me)
+					rf.resetToFollower(reply.Term)
+					shouldExit = true
+					return
+				}
+			default:
+			}
+		})
+
+		if shouldExit {
+			return
+		}
+
+		if shouldSkip {
+			continue
+		}
+	}
+}
+
+func (rf *Raft) sendAppendEntries(server int, ch chan *AppendEntriesReply, args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	if rf.killed() {
+		return
+	}
+
+	fmt.Printf("Server %d sending AppendEntries to %d\n", rf.me, server)
+
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	reply.RequestCompleted = ok
+
+	ch <- reply
+}
+
+type AppendEntriesArgs struct {
+	Term     int
+	LeaderId int
+}
+
+type AppendEntriesReply struct {
+	Term             int
+	Success          bool
+	RequestCompleted bool
+}
+
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	rf.receivedRpcFromPeer = true
+
+	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
+		reply.Success = false
+		return
+	}
+
+	if args.Term > rf.currentTerm || rf.state == candidate {
+		fmt.Printf("Received AppendEntries from server with higher term. Reset server %d to follower\n", rf.me)
+		rf.resetToFollower(args.Term)
+	}
+
+	reply.Term = rf.currentTerm
+	reply.Success = true
+}
+
 func (rf *Raft) resetToFollower(term int) {
 	rf.state = follower
 	rf.currentTerm = term
 	rf.votedFor = -1
-
-	fmt.Printf("Reset server %d to follower\n", rf.me)
 }
 
 // the service or tester wants to create a Raft server. the ports
