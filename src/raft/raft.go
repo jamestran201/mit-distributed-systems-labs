@@ -384,7 +384,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.receivedRpcFromPeer = true
 	rf.log(fmt.Sprintf("Received requestVote from %d", args.CandidateId))
 
 	if args.Term < rf.currentTerm {
@@ -397,6 +396,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.log("Received RequestVote from server with higher term. Reset state to follower")
 		rf.resetToFollower(args.Term)
 	}
+
+	rf.receivedRpcFromPeer = true
 
 	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
 		rf.votedFor = args.CandidateId
@@ -517,7 +518,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.receivedRpcFromPeer = true
 	rf.log(fmt.Sprintf("Received AppendEntries from %d", args.LeaderId))
 
 	if args.Term < rf.currentTerm {
@@ -525,6 +525,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.Success = false
 		return
 	}
+
+	rf.receivedRpcFromPeer = true
 
 	if args.Term > rf.currentTerm || rf.state == candidate {
 		rf.log("Received AppendEntries from server with higher term. Reset state to follower")
