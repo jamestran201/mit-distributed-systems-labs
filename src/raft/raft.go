@@ -417,8 +417,13 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 }
 
 func (rf *Raft) appendEntriesFanout(term int) {
+	var prevStopCh chan bool
 	for !rf.killed() {
-		rf.log("Sending AppendEntries to follower")
+		rf.log("Sending AppendEntries to followers")
+
+		if prevStopCh != nil {
+			prevStopCh <- true
+		}
 
 		responseCh := make(chan *AppendEntriesReply, len(rf.peers)-1)
 		for i := range rf.peers {
@@ -442,15 +447,25 @@ func (rf *Raft) appendEntriesFanout(term int) {
 			go rf.sendAppendEntries(i, responseCh, &AppendEntriesArgs{Term: term, LeaderId: rf.me}, &AppendEntriesReply{})
 		}
 
-		go rf.handleAppendEntriesResponses(term, responseCh)
+		prevStopCh = make(chan bool, 1)
+		go rf.handleAppendEntriesResponses(term, responseCh, prevStopCh)
 
 		time.Sleep(300 * time.Millisecond)
 	}
 }
 
-func (rf *Raft) handleAppendEntriesResponses(term int, responseCh chan *AppendEntriesReply) {
+func (rf *Raft) handleAppendEntriesResponses(term int, responseCh chan *AppendEntriesReply, stopCh chan bool) {
 	responsesReceived := 0
 	for !rf.killed() && responsesReceived < len(rf.peers)-1 {
+		select {
+		case shouldExit := <-stopCh:
+			if shouldExit {
+				rf.log("Stopping old handleAppendEntriesResponses routine")
+				return
+			}
+		default:
+		}
+
 		shouldExit := false
 		shouldSkip := false
 
