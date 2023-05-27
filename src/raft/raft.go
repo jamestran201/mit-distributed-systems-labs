@@ -65,6 +65,11 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
+type LogEntry struct {
+	Command interface{}
+	Term    int
+}
+
 // A Go object implementing a single Raft peer.
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
@@ -80,6 +85,15 @@ type Raft struct {
 	votedFor            int
 	state               serverState
 	receivedRpcFromPeer bool
+	logs                []LogEntry
+
+	// Available to all servers
+	commitIndex int
+	lastApplied int
+
+	// Leader only
+	nextIndex  []int
+	matchIndex []int
 }
 
 func (rf *Raft) GetState() (int, bool) {
@@ -372,6 +386,8 @@ type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
 	Term        int
 	CandidateId int
+	// LastLogIndex int
+	// LastLogTerm  int
 }
 
 type RequestVoteReply struct {
@@ -431,20 +447,36 @@ func (rf *Raft) appendEntriesFanout(term int) {
 				return
 			}
 
-			shouldExit := false
-			withLock(&rf.mu, func() {
-				shouldExit = rf.state != leader
-			})
-			if shouldExit {
-				rf.log("Exiting AppendEntriesFanout routine because server is no longer the leader")
-				return
-			}
-
 			if i == rf.me {
 				continue
 			}
 
-			go rf.sendAppendEntries(i, responseCh, &AppendEntriesArgs{Term: term, LeaderId: rf.me}, &AppendEntriesReply{})
+			shouldExit := false
+			withLock(&rf.mu, func() {
+				shouldExit = rf.state != leader
+				if shouldExit {
+					rf.log("Exiting AppendEntriesFanout routine because server is no longer the leader")
+					return
+				}
+
+				prevLogTerm := 0
+				if len(rf.logs) > 0 {
+					prevLogTerm = rf.logs[len(rf.logs)-1].Term
+				}
+
+				args := &AppendEntriesArgs{
+					Term:         term,
+					LeaderId:     rf.me,
+					PrevLogIndex: len(rf.logs),
+					PrevLogTerm:  prevLogTerm,
+					Entries:      []LogEntry{},
+				}
+				go rf.sendAppendEntries(i, responseCh, args, &AppendEntriesReply{})
+			})
+
+			if shouldExit {
+				return
+			}
 		}
 
 		prevStopCh = make(chan bool, 1)
@@ -520,8 +552,12 @@ func (rf *Raft) sendAppendEntries(server int, ch chan *AppendEntriesReply, args 
 }
 
 type AppendEntriesArgs struct {
-	Term     int
-	LeaderId int
+	Term         int
+	LeaderId     int
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []LogEntry
+	LeaderCommit int
 }
 
 type AppendEntriesReply struct {
@@ -542,12 +578,33 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
+	if (args.PrevLogIndex == 0 && len(rf.logs) > 0) || (args.PrevLogIndex > len(rf.logs)) {
+		rf.log(fmt.Sprintf("The logs from current server are not in sync with server %d", args.LeaderId))
+		reply.Term = rf.currentTerm
+		reply.Success = false
+		return
+	}
+
+	// At this point, there are 2 possibilities:
+	// 1. PrevLogIndex is 0 and the server has no logs
+	// 2. PrevLogIndex is > 0 and the server has at least PrevLogIndex logs
+	// This condition follows case 2
+	// Use PrevLogIndex - 1 because log indices start from 1
+	if args.PrevLogIndex > 0 && args.PrevLogTerm != rf.logs[args.PrevLogIndex-1].Term {
+		rf.log(fmt.Sprintf("The logs from current server does not have the same term as server %d", args.LeaderId))
+		reply.Term = rf.currentTerm
+		reply.Success = false
+		return
+	}
+
 	rf.receivedRpcFromPeer = true
 
 	if args.Term > rf.currentTerm || rf.state == candidate {
 		rf.log("Received AppendEntries from server with higher term. Reset state to follower")
 		rf.resetToFollower(args.Term)
 	}
+
+	// TODO: Continue handling entries here
 
 	reply.Term = rf.currentTerm
 	reply.Success = true
@@ -584,6 +641,17 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.votedFor = -1
 	rf.state = follower
 	rf.receivedRpcFromPeer = false
+	rf.logs = []LogEntry{}
+
+	rf.commitIndex = 0
+	rf.lastApplied = 0
+
+	rf.nextIndex = make([]int, len(peers))
+	for i := range rf.nextIndex {
+		rf.nextIndex[i] = 1
+	}
+
+	rf.matchIndex = make([]int, len(peers))
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
