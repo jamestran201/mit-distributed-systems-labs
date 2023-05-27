@@ -578,8 +578,22 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	if (args.PrevLogIndex == 0 && len(rf.logs) > 0) || (args.PrevLogIndex > len(rf.logs)) {
-		rf.log(fmt.Sprintf("The logs from current server are not in sync with server %d", args.LeaderId))
+	rf.receivedRpcFromPeer = true
+
+	if args.Term > rf.currentTerm || rf.state == candidate {
+		rf.log("Received AppendEntries from server with higher term. Reset state to follower")
+		rf.resetToFollower(args.Term)
+	}
+
+	if args.PrevLogIndex == 0 && len(rf.logs) > 0 {
+		rf.log(fmt.Sprintf("BIG WARNING!!! This server contains logs while leader %d has none. This should not happen!", args.LeaderId))
+		reply.Term = rf.currentTerm
+		reply.Success = false
+		return
+	}
+
+	if args.PrevLogIndex > len(rf.logs) {
+		rf.log(fmt.Sprintf("The logs from current server are not in sync with leader %d", args.LeaderId))
 		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
@@ -591,20 +605,27 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// This condition follows case 2
 	// Use PrevLogIndex - 1 because log indices start from 1
 	if args.PrevLogIndex > 0 && args.PrevLogTerm != rf.logs[args.PrevLogIndex-1].Term {
-		rf.log(fmt.Sprintf("The logs from current server does not have the same term as server %d", args.LeaderId))
+		rf.log(fmt.Sprintf("The logs from current server does not have the same term as leader %d", args.LeaderId))
 		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
 	}
 
-	rf.receivedRpcFromPeer = true
-
-	if args.Term > rf.currentTerm || rf.state == candidate {
-		rf.log("Received AppendEntries from server with higher term. Reset state to follower")
-		rf.resetToFollower(args.Term)
+	// The log at rf.logs[PrevLogIndex-1] is the last one on this server that matches the leader's log.
+	// All logs after this differ from the leader's and should be discarded.
+	if len(rf.logs) > args.PrevLogIndex {
+		rf.logs = rf.logs[:args.PrevLogIndex]
 	}
 
-	// TODO: Continue handling entries here
+	rf.logs = append(rf.logs, args.Entries...)
+
+	if args.LeaderCommit > rf.commitIndex {
+		if args.LeaderCommit > len(rf.logs) {
+			rf.commitIndex = len(rf.logs)
+		} else {
+			rf.commitIndex = args.LeaderCommit
+		}
+	}
 
 	reply.Term = rf.currentTerm
 	reply.Success = true
