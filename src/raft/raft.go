@@ -253,6 +253,10 @@ func (rf *Raft) requestVotes(term int) {
 			return
 		}
 
+		if i == rf.me {
+			continue
+		}
+
 		shouldExit := false
 		withLock(&rf.mu, func() {
 			if rf.currentTerm != term || rf.state != candidate {
@@ -262,17 +266,24 @@ func (rf *Raft) requestVotes(term int) {
 				shouldExit = true
 				return
 			}
+
+			lastLogTerm := 0
+			if len(rf.logs) > 0 {
+				lastLogTerm = rf.logs[len(rf.logs)-1].Term
+			}
+			args := &RequestVoteArgs{
+				Term:         term,
+				CandidateId:  rf.me,
+				LastLogIndex: len(rf.logs),
+				LastLogTerm:  lastLogTerm,
+			}
+
+			go rf.sendRequestVote(i, responseCh, args, &RequestVoteReply{})
 		})
 
 		if shouldExit {
 			return
 		}
-
-		if i == rf.me {
-			continue
-		}
-
-		go rf.sendRequestVote(i, responseCh, &RequestVoteArgs{Term: term, CandidateId: rf.me}, &RequestVoteReply{})
 	}
 
 	go rf.handleRequestVoteResponses(term, responseCh)
@@ -384,10 +395,10 @@ func (rf *Raft) sendRequestVote(server int, ch chan *RequestVoteReply, args *Req
 
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
-	Term        int
-	CandidateId int
-	// LastLogIndex int
-	// LastLogTerm  int
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 type RequestVoteReply struct {
@@ -416,7 +427,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	rf.receivedRpcFromPeer = true
 
-	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
+	if rf.votedFor == args.CandidateId {
+		reply.Term = rf.currentTerm
+		reply.VoteGranted = true
+
+		rf.log(fmt.Sprintf("Already voted for %d", args.CandidateId))
+		return
+	}
+
+	if rf.votedFor == -1 && rf.logsAtLeastUpToDate(args.LastLogIndex, args.LastLogTerm) {
 		rf.votedFor = args.CandidateId
 
 		reply.Term = rf.currentTerm
@@ -430,6 +449,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.VoteGranted = false
 
 	rf.log(fmt.Sprintf("Rejected RequestVote from %d because it already voted for %d", args.CandidateId, rf.votedFor))
+}
+
+func (rf *Raft) logsAtLeastUpToDate(incLogIndex, incLogTerm int) bool {
+	if len(rf.logs) == 0 && incLogIndex == 0 {
+		return true
+	}
+
+	return incLogIndex > len(rf.logs) ||
+		(incLogIndex == len(rf.logs) && incLogTerm >= rf.logs[len(rf.logs)-1].Term)
 }
 
 func (rf *Raft) appendEntriesFanout(term int) {
