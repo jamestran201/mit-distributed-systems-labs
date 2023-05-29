@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"fmt"
 	"log"
 	"sync"
 )
@@ -20,4 +21,8 @@ func withLock(mu *sync.Mutex, f func()) {
 	defer mu.Unlock()
 
 	f()
+}
+
+func debugLog(rf *Raft, msg string) {
+	fmt.Printf("Server %d - %s\n", rf.me, msg)
 }

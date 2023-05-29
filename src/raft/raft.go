@@ -181,7 +181,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
 
-	rf.log("Server is killed")
+	debugLog(rf, "Server is killed")
 }
 
 func (rf *Raft) killed() bool {
@@ -194,68 +194,14 @@ func (rf *Raft) ticker() {
 		// Your code here (2A)
 		// Check if a leader election should be started.
 
-		// pause for a random amount of time between 50 and 350
-		// milliseconds.
+		// pause for a random amount of time between 400 and 800 milliseconds
 		ms := 400 + (rand.Int63() % 800)
-		rf.log(fmt.Sprintf("Current election timeout is %d milliseconds", ms))
+		debugLog(rf, fmt.Sprintf("Current election timeout is %d milliseconds", ms))
 
 		time.Sleep(time.Duration(ms) * time.Millisecond)
-		rf.log("Election timeout period elapsed")
+		debugLog(rf, "Election timeout period elapsed")
 
-		rf.considerStartingElection()
-	}
-}
-
-func (rf *Raft) considerStartingElection() {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	if rf.state == leader {
-		rf.log("Already leader, skipping election")
-		return
-	}
-
-	switch rf.state {
-	case follower:
-		if !rf.receivedRpcFromPeer {
-			rf.log("Did not receive RPC from peer, starting election")
-
-			rf.startElection()
-		} else {
-			rf.log("Received RPC from peer, skipping election")
-		}
-
-		rf.receivedRpcFromPeer = false
-	case candidate:
-		rf.log("Candidate did not win election within the election timeout period, starting new election")
-
-		rf.startElection()
-	}
-}
-
-func (rf *Raft) startElection() {
-	rf.state = candidate
-	rf.currentTerm++
-	rf.votedFor = rf.me
-	rf.votesReceived = 1
-	rf.requestVotesResponsesReceived = 0
-
-	go rf.requestVotes(rf.currentTerm)
-}
-
-func (rf *Raft) requestVotes(term int) {
-	rf.log("Requesting votes")
-
-	for i := 0; i < len(rf.peers); i++ {
-		if rf.killed() {
-			return
-		}
-
-		if i == rf.me {
-			continue
-		}
-
-		go requestVotesFromServer(rf, term, i)
+		considerStartingElection(rf)
 	}
 }
 
@@ -263,19 +209,10 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	handleRequestVotes(rf, args, reply)
 }
 
-func (rf *Raft) logsAtLeastUpToDate(incLogIndex, incLogTerm int) bool {
-	if len(rf.logs) == 0 && incLogIndex == 0 {
-		return true
-	}
-
-	return incLogIndex > len(rf.logs) ||
-		(incLogIndex == len(rf.logs) && incLogTerm >= rf.logs[len(rf.logs)-1].Term)
-}
-
 func (rf *Raft) appendEntriesFanout(term int) {
 	var prevStopCh chan bool
 	for !rf.killed() {
-		rf.log("Sending AppendEntries to followers")
+		debugLog(rf, "Sending AppendEntries to followers")
 
 		if prevStopCh != nil {
 			prevStopCh <- true
@@ -295,7 +232,7 @@ func (rf *Raft) appendEntriesFanout(term int) {
 			withLock(&rf.mu, func() {
 				shouldExit = rf.state != leader
 				if shouldExit {
-					rf.log("Exiting AppendEntriesFanout routine because server is no longer the leader")
+					debugLog(rf, "Exiting AppendEntriesFanout routine because server is no longer the leader")
 					return
 				}
 
@@ -332,7 +269,7 @@ func (rf *Raft) handleAppendEntriesResponses(term int, responseCh chan *AppendEn
 		select {
 		case shouldExit := <-stopCh:
 			if shouldExit {
-				rf.log("Stopping old handleAppendEntriesResponses routine")
+				debugLog(rf, "Stopping old handleAppendEntriesResponses routine")
 				return
 			}
 		default:
@@ -345,7 +282,7 @@ func (rf *Raft) handleAppendEntriesResponses(term int, responseCh chan *AppendEn
 
 		withLock(&rf.mu, func() {
 			if rf.state != leader {
-				rf.log("Server is no longer the leader, exiting handleAppendEntriesResponses routine")
+				debugLog(rf, "Server is no longer the leader, exiting handleAppendEntriesResponses routine")
 				shouldExit = true
 				return
 			}
@@ -355,13 +292,13 @@ func (rf *Raft) handleAppendEntriesResponses(term int, responseCh chan *AppendEn
 				responsesReceived++
 
 				if !reply.RequestCompleted {
-					rf.log("An AppendEntry request could not be processed successfully, skipping")
+					debugLog(rf, "An AppendEntry request could not be processed successfully, skipping")
 					shouldSkip = true
 					return
 				}
 
 				if reply.Term > rf.currentTerm {
-					rf.log("Received AppendEntries response from server with higher term. Reset state to follower")
+					debugLog(rf, "Received AppendEntries response from server with higher term. Reset state to follower")
 					rf.resetToFollower(reply.Term)
 					shouldExit = true
 					return
@@ -385,7 +322,7 @@ func (rf *Raft) sendAppendEntries(server int, ch chan *AppendEntriesReply, args 
 		return
 	}
 
-	rf.log(fmt.Sprintf("Sending AppendEntries to %d", server))
+	debugLog(rf, fmt.Sprintf("Sending AppendEntries to %d", server))
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	reply.RequestCompleted = ok
@@ -412,7 +349,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.log(fmt.Sprintf("Received AppendEntries from %d", args.LeaderId))
+	debugLog(rf, fmt.Sprintf("Received AppendEntries from %d", args.LeaderId))
 
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
@@ -423,19 +360,19 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.receivedRpcFromPeer = true
 
 	if args.Term > rf.currentTerm || rf.state == candidate {
-		rf.log("Received AppendEntries from server with higher term. Reset state to follower")
+		debugLog(rf, "Received AppendEntries from server with higher term. Reset state to follower")
 		rf.resetToFollower(args.Term)
 	}
 
 	if args.PrevLogIndex == 0 && len(rf.logs) > 0 {
-		rf.log(fmt.Sprintf("BIG WARNING!!! This server contains logs while leader %d has none. This should not happen!", args.LeaderId))
+		debugLog(rf, fmt.Sprintf("BIG WARNING!!! This server contains logs while leader %d has none. This should not happen!", args.LeaderId))
 		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
 	}
 
 	if args.PrevLogIndex > len(rf.logs) {
-		rf.log(fmt.Sprintf("The logs from current server are not in sync with leader %d", args.LeaderId))
+		debugLog(rf, fmt.Sprintf("The logs from current server are not in sync with leader %d", args.LeaderId))
 		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
@@ -447,7 +384,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// This condition follows case 2
 	// Use PrevLogIndex - 1 because log indices start from 1
 	if args.PrevLogIndex > 0 && args.PrevLogTerm != rf.logs[args.PrevLogIndex-1].Term {
-		rf.log(fmt.Sprintf("The logs from current server does not have the same term as leader %d", args.LeaderId))
+		debugLog(rf, fmt.Sprintf("The logs from current server does not have the same term as leader %d", args.LeaderId))
 		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
@@ -479,10 +416,6 @@ func (rf *Raft) resetToFollower(term int) {
 	rf.votedFor = -1
 	rf.votesReceived = 0
 	rf.requestVotesResponsesReceived = 0
-}
-
-func (rf *Raft) log(msg string) {
-	fmt.Printf("Server %d - %s\n", rf.me, msg)
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -521,7 +454,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	rf.log("Starting server")
+	debugLog(rf, "Starting server")
 
 	// start ticker goroutine to start elections
 	go rf.ticker()

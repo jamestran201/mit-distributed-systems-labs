@@ -21,16 +21,16 @@ func handleRequestVotes(rf *Raft, args *RequestVoteArgs, reply *RequestVoteReply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	rf.log(fmt.Sprintf("Received RequestVote from %d", args.CandidateId))
+	debugLog(rf, fmt.Sprintf("Received RequestVote from %d", args.CandidateId))
 
 	if args.Term < rf.currentTerm {
-		rf.log(fmt.Sprintf("Rejected RequestVote from %d because of stale term", args.CandidateId))
+		debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d because of stale term", args.CandidateId))
 
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
 		return
 	} else if args.Term > rf.currentTerm {
-		rf.log("Received RequestVote from server with higher term. Reset state to follower")
+		debugLog(rf, "Received RequestVote from server with higher term. Reset state to follower")
 		rf.resetToFollower(args.Term)
 	}
 
@@ -40,24 +40,40 @@ func handleRequestVotes(rf *Raft, args *RequestVoteArgs, reply *RequestVoteReply
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = true
 
-		rf.log(fmt.Sprintf("Already voted for %d", args.CandidateId))
+		debugLog(rf, fmt.Sprintf("Already voted for %d", args.CandidateId))
 		return
 	}
 
-	if rf.votedFor == -1 && rf.logsAtLeastUpToDate(args.LastLogIndex, args.LastLogTerm) {
+	if rf.votedFor == -1 && logsNoNewerThan(rf, args.LastLogIndex, args.LastLogTerm) {
 		rf.votedFor = args.CandidateId
 
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = true
 
-		rf.log(fmt.Sprintf("Voted for %d", args.CandidateId))
+		debugLog(rf, fmt.Sprintf("Voted for %d", args.CandidateId))
 		return
 	}
 
 	reply.Term = rf.currentTerm
 	reply.VoteGranted = false
 
-	rf.log(fmt.Sprintf("Rejected RequestVote from %d because it already voted for %d", args.CandidateId, rf.votedFor))
+	debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d because it already voted for %d", args.CandidateId, rf.votedFor))
+}
+
+func requestVotesFromPeers(rf *Raft, term int) {
+	debugLog(rf, "Requesting votes")
+
+	for i := 0; i < len(rf.peers); i++ {
+		if rf.killed() {
+			return
+		}
+
+		if i == rf.me {
+			continue
+		}
+
+		go requestVotesFromServer(rf, term, i)
+	}
 }
 
 func requestVotesFromServer(rf *Raft, term int, server int) {
@@ -65,15 +81,16 @@ func requestVotesFromServer(rf *Raft, term int, server int) {
 		return
 	}
 
-	if rf.killed() {
-		return
-	}
-
 	shouldExit := false
 	args := &RequestVoteArgs{}
 	withLock(&rf.mu, func() {
+		if rf.killed() {
+			shouldExit = true
+			return
+		}
+
 		if rf.currentTerm != term || rf.state != candidate {
-			rf.log(fmt.Sprintf(
+			debugLog(rf, fmt.Sprintf(
 				"Candidate state changed, aborting requestVotes routine.\nCurrent term: %d, given term: %d.\nCurrent state: %d", rf.currentTerm, term, rf.state,
 			))
 			shouldExit = true
@@ -128,32 +145,32 @@ func requestVotesFromServer(rf *Raft, term int, server int) {
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
 func sendRequestVote(rf *Raft, server int, args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.log(fmt.Sprintf("Sending RequestVote to %d", server))
+	debugLog(rf, fmt.Sprintf("Sending RequestVote to %d", server))
 
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	reply.RequestCompleted = ok
 }
 
 func handleRequestVoteResponse(rf *Raft, term int, server int, reply *RequestVoteReply) {
-	// rf.log(fmt.Sprintf("Waiting for RequestVote response. Current term: %d, Votes: %d, Responses received: %d", rf.currentTerm, votes, responsesReceived))
+	// debugLog(rf, fmt.Sprintf("Waiting for RequestVote response. Current term: %d, Votes: %d, Responses received: %d", rf.currentTerm, votes, responsesReceived))
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
 	if rf.state != candidate || rf.currentTerm != term {
-		rf.log("State is outdated, exiting requestVotes routine")
+		debugLog(rf, "State is outdated, exiting requestVotes routine")
 		return
 	}
 
-	rf.log(fmt.Sprintf("Received RequestVote response from %d", server))
+	debugLog(rf, fmt.Sprintf("Received RequestVote response from %d", server))
 
 	if !reply.RequestCompleted {
-		rf.log("A RequestVote request could not be processed successfully, skipping")
+		debugLog(rf, "A RequestVote request could not be processed successfully, skipping")
 		return
 	}
 
 	if reply.Term > rf.currentTerm {
-		rf.log("Received RequestVote response from server with higher term. Reset state to follower")
+		debugLog(rf, "Received RequestVote response from server with higher term. Reset state to follower")
 		rf.resetToFollower(reply.Term)
 		return
 	}
@@ -164,15 +181,15 @@ func handleRequestVoteResponse(rf *Raft, term int, server int, reply *RequestVot
 func updateVotesReceived(rf *Raft, voteGranted bool, server int) {
 	if voteGranted {
 		rf.votesReceived++
-		rf.log(fmt.Sprintf("Received vote from %d", server))
+		debugLog(rf, fmt.Sprintf("Received vote from %d", server))
 	}
 
 	if rf.votesReceived > len(rf.peers)/2 {
 		rf.state = leader
 		go rf.appendEntriesFanout(rf.currentTerm)
 
-		rf.log(fmt.Sprintf("Promoted to leader. Current term: %d", rf.currentTerm))
+		debugLog(rf, fmt.Sprintf("Promoted to leader. Current term: %d", rf.currentTerm))
 	} else if rf.requestVotesResponsesReceived >= len(rf.peers)-1 {
-		rf.log(fmt.Sprintf("Candidate did not receive enough votes to become leader. Current term: %d", rf.currentTerm))
+		debugLog(rf, fmt.Sprintf("Candidate did not receive enough votes to become leader. Current term: %d", rf.currentTerm))
 	}
 }
