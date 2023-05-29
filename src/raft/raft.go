@@ -37,13 +37,6 @@ const (
 	leader
 )
 
-func withLock(mu *sync.Mutex, f func()) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	f()
-}
-
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
 // tester) on the same server, via the applyCh passed to Make(). set
@@ -86,6 +79,9 @@ type Raft struct {
 	state               serverState
 	receivedRpcFromPeer bool
 	logs                []LogEntry
+
+	votesReceived                 int
+	requestVotesResponsesReceived int
 
 	// Available to all servers
 	commitIndex int
@@ -241,13 +237,15 @@ func (rf *Raft) startElection() {
 	rf.state = candidate
 	rf.currentTerm++
 	rf.votedFor = rf.me
+	rf.votesReceived = 1
+	rf.requestVotesResponsesReceived = 0
+
 	go rf.requestVotes(rf.currentTerm)
 }
 
 func (rf *Raft) requestVotes(term int) {
 	rf.log("Requesting votes")
 
-	responseCh := make(chan *RequestVoteReply, len(rf.peers)-1)
 	for i := 0; i < len(rf.peers); i++ {
 		if rf.killed() {
 			return
@@ -257,198 +255,12 @@ func (rf *Raft) requestVotes(term int) {
 			continue
 		}
 
-		shouldExit := false
-		withLock(&rf.mu, func() {
-			if rf.currentTerm != term || rf.state != candidate {
-				rf.log(fmt.Sprintf(
-					"Candidate state changed, aborting requestVotes routine.\nCurrent term: %d, given term: %d.\nCurrent state: %d\n", rf.currentTerm, term, rf.state,
-				))
-				shouldExit = true
-				return
-			}
-
-			lastLogTerm := 0
-			if len(rf.logs) > 0 {
-				lastLogTerm = rf.logs[len(rf.logs)-1].Term
-			}
-			args := &RequestVoteArgs{
-				Term:         term,
-				CandidateId:  rf.me,
-				LastLogIndex: len(rf.logs),
-				LastLogTerm:  lastLogTerm,
-			}
-
-			go rf.sendRequestVote(i, responseCh, args, &RequestVoteReply{})
-		})
-
-		if shouldExit {
-			return
-		}
+		go requestVotesFromServer(rf, term, i)
 	}
-
-	go rf.handleRequestVoteResponses(term, responseCh)
-}
-
-func (rf *Raft) handleRequestVoteResponses(term int, responseCh chan *RequestVoteReply) {
-	// Start at 1 because the candidate votes for itself
-	votes := 1
-	responsesReceived := 0
-	for !rf.killed() {
-		shouldExit := false
-		shouldSkip := false
-
-		// rf.log(fmt.Sprintf("Waiting for RequestVote response. Current term: %d, Votes: %d, Responses received: %d", rf.currentTerm, votes, responsesReceived))
-
-		withLock(&rf.mu, func() {
-			if rf.state != candidate || rf.currentTerm != term {
-				rf.log("State is outdated, exiting requestVotes routine")
-				shouldExit = true
-				return
-			}
-
-			select {
-			case reply := <-responseCh:
-				responsesReceived++
-				rf.log(fmt.Sprintf("Received %d RequestVote responses", responsesReceived))
-
-				if !reply.RequestCompleted {
-					rf.log("A RequestVote request could not be processed successfully, skipping")
-					shouldSkip = true
-					return
-				}
-
-				if reply.Term > rf.currentTerm {
-					rf.log("Received RequestVote response from server with higher term. Reset state to follower")
-					rf.resetToFollower(reply.Term)
-					shouldExit = true
-					return
-				}
-
-				if reply.VoteGranted {
-					votes++
-					rf.log("Received vote from peer")
-				}
-			default:
-			}
-
-			if votes > len(rf.peers)/2 {
-				rf.state = leader
-				go rf.appendEntriesFanout(rf.currentTerm)
-
-				rf.log(fmt.Sprintf("Promoted to leader. Current term: %d", rf.currentTerm))
-				shouldExit = true
-			} else if responsesReceived >= len(rf.peers)-1 {
-				rf.log(fmt.Sprintf("Candidate did not receive enough votes to become leader. Current term: %d", rf.currentTerm))
-				shouldExit = true
-			}
-		})
-
-		if shouldExit {
-			return
-		}
-
-		if shouldSkip {
-			continue
-		}
-	}
-}
-
-// example code to send a RequestVote RPC to a server.
-// server is the index of the target server in rf.peers[].
-// expects RPC arguments in args.
-// fills in *reply with RPC reply, so caller should
-// pass &reply.
-// the types of the args and reply passed to Call() must be
-// the same as the types of the arguments declared in the
-// handler function (including whether they are pointers).
-//
-// The labrpc package simulates a lossy network, in which servers
-// may be unreachable, and in which requests and replies may be lost.
-// Call() sends a request and waits for a reply. If a reply arrives
-// within a timeout interval, Call() returns true; otherwise
-// Call() returns false. Thus Call() may not return for a while.
-// A false return can be caused by a dead server, a live server that
-// can't be reached, a lost request, or a lost reply.
-//
-// Call() is guaranteed to return (perhaps after a delay) *except* if the
-// handler function on the server side does not return.  Thus there
-// is no need to implement your own timeouts around Call().
-//
-// look at the comments in ../labrpc/labrpc.go for more details.
-//
-// if you're having trouble getting RPC to work, check that you've
-// capitalized all field names in structs passed over RPC, and
-// that the caller passes the address of the reply struct with &, not
-// the struct itself.
-func (rf *Raft) sendRequestVote(server int, ch chan *RequestVoteReply, args *RequestVoteArgs, reply *RequestVoteReply) {
-	if rf.killed() {
-		return
-	}
-
-	rf.log(fmt.Sprintf("Sending RequestVote to %d", server))
-
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-	reply.RequestCompleted = ok
-
-	ch <- reply
-}
-
-type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
-	Term         int
-	CandidateId  int
-	LastLogIndex int
-	LastLogTerm  int
-}
-
-type RequestVoteReply struct {
-	// Your data here (2A).
-	Term             int
-	VoteGranted      bool
-	RequestCompleted bool
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	rf.log(fmt.Sprintf("Received RequestVote from %d", args.CandidateId))
-
-	if args.Term < rf.currentTerm {
-		rf.log(fmt.Sprintf("Rejected RequestVote from %d because of stale term", args.CandidateId))
-
-		reply.Term = rf.currentTerm
-		reply.VoteGranted = false
-		return
-	} else if args.Term > rf.currentTerm {
-		rf.log("Received RequestVote from server with higher term. Reset state to follower")
-		rf.resetToFollower(args.Term)
-	}
-
-	rf.receivedRpcFromPeer = true
-
-	if rf.votedFor == args.CandidateId {
-		reply.Term = rf.currentTerm
-		reply.VoteGranted = true
-
-		rf.log(fmt.Sprintf("Already voted for %d", args.CandidateId))
-		return
-	}
-
-	if rf.votedFor == -1 && rf.logsAtLeastUpToDate(args.LastLogIndex, args.LastLogTerm) {
-		rf.votedFor = args.CandidateId
-
-		reply.Term = rf.currentTerm
-		reply.VoteGranted = true
-
-		rf.log(fmt.Sprintf("Voted for %d", args.CandidateId))
-		return
-	}
-
-	reply.Term = rf.currentTerm
-	reply.VoteGranted = false
-
-	rf.log(fmt.Sprintf("Rejected RequestVote from %d because it already voted for %d", args.CandidateId, rf.votedFor))
+	handleRequestVotes(rf, args, reply)
 }
 
 func (rf *Raft) logsAtLeastUpToDate(incLogIndex, incLogTerm int) bool {
@@ -528,6 +340,8 @@ func (rf *Raft) handleAppendEntriesResponses(term int, responseCh chan *AppendEn
 
 		shouldExit := false
 		shouldSkip := false
+
+		// TODO: handle log inconsistencies with followers
 
 		withLock(&rf.mu, func() {
 			if rf.state != leader {
@@ -663,6 +477,8 @@ func (rf *Raft) resetToFollower(term int) {
 	rf.state = follower
 	rf.currentTerm = term
 	rf.votedFor = -1
+	rf.votesReceived = 0
+	rf.requestVotesResponsesReceived = 0
 }
 
 func (rf *Raft) log(msg string) {
