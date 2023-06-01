@@ -232,27 +232,26 @@ func (rf *Raft) resetToFollower(term int) {
 // for any long-running work.
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
-	rf := &Raft{}
-	rf.peers = peers
-	rf.persister = persister
-	rf.me = me
 
-	// Your initialization code here (2A, 2B, 2C).
-	rf.currentTerm = 0
-	rf.votedFor = -1
-	rf.state = follower
-	rf.receivedRpcFromPeer = false
-	rf.logs = []LogEntry{}
-
-	rf.commitIndex = 0
-	rf.lastApplied = 0
-
-	rf.nextIndex = make([]int, len(peers))
-	for i := range rf.nextIndex {
-		rf.nextIndex[i] = 1
+	nextIndex := make([]int, len(peers))
+	for i := range nextIndex {
+		nextIndex[i] = 1
 	}
 
-	rf.matchIndex = make([]int, len(peers))
+	rf := &Raft{
+		peers:               peers,
+		persister:           persister,
+		me:                  me,
+		currentTerm:         0,
+		votedFor:            -1,
+		state:               follower,
+		receivedRpcFromPeer: false,
+		logs:                []LogEntry{},
+		commitIndex:         0,
+		lastApplied:         0,
+		nextIndex:           nextIndex,
+		matchIndex:          make([]int, len(peers)),
+	}
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
