@@ -186,7 +186,8 @@ func updateVotesReceived(rf *Raft, voteGranted bool, server int) {
 
 	if rf.votesReceived > len(rf.peers)/2 {
 		rf.state = leader
-		go rf.appendEntriesFanout(rf.currentTerm)
+		// go rf.appendEntriesFanout(rf.currentTerm)
+		startHeartBeat(rf)
 
 		debugLog(rf, fmt.Sprintf("Promoted to leader. Current term: %d", rf.currentTerm))
 	} else if rf.requestVotesResponsesReceived >= len(rf.peers)-1 {
