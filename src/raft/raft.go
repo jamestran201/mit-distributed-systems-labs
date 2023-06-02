@@ -221,6 +221,26 @@ func (rf *Raft) resetToFollower(term int) {
 	rf.requestVotesResponsesReceived = 0
 }
 
+func (rf *Raft) lastLogIndex() int {
+	return len(rf.logs)
+}
+
+func (rf *Raft) lastLogTerm() int {
+	if rf.lastLogIndex() == 0 {
+		return 0
+	} else {
+		return rf.logs[rf.lastLogIndex()-1].Term
+	}
+}
+
+func (rf *Raft) logEntryAt(index int) *LogEntry {
+	if index <= 0 {
+		return nil
+	}
+
+	return &rf.logs[index-1]
+}
+
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
 // server's port is peers[me]. all the servers' peers[] arrays

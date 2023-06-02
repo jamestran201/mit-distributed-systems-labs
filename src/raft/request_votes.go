@@ -97,15 +97,10 @@ func requestVotesFromServer(rf *Raft, term int, server int) {
 			return
 		}
 
-		lastLogTerm := 0
-		if len(rf.logs) > 0 {
-			lastLogTerm = rf.logs[len(rf.logs)-1].Term
-		}
-
 		args.Term = term
 		args.CandidateId = rf.me
-		args.LastLogIndex = len(rf.logs)
-		args.LastLogTerm = lastLogTerm
+		args.LastLogIndex = rf.lastLogIndex()
+		args.LastLogTerm = rf.lastLogTerm()
 	})
 
 	if shouldExit {
@@ -186,7 +181,6 @@ func updateVotesReceived(rf *Raft, voteGranted bool, server int) {
 
 	if rf.votesReceived > len(rf.peers)/2 {
 		rf.state = leader
-		// go rf.appendEntriesFanout(rf.currentTerm)
 		startHeartBeat(rf)
 
 		debugLog(rf, fmt.Sprintf("Promoted to leader. Current term: %d", rf.currentTerm))
