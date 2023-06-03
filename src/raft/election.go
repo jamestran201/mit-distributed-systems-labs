@@ -1,5 +1,7 @@
 package raft
 
+import "fmt"
+
 func considerStartingElection(rf *Raft) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -35,4 +37,19 @@ func startElection(rf *Raft) {
 	rf.requestVotesResponsesReceived = 0
 
 	go requestVotesFromPeers(rf, rf.currentTerm)
+}
+
+func onLeaderElection(rf *Raft) {
+	rf.state = leader
+	startHeartBeat(rf)
+
+	nextIndex := make([]int, len(rf.peers))
+	for i := range nextIndex {
+		nextIndex[i] = rf.lastLogIndex() + 1
+	}
+
+	rf.nextIndex = nextIndex
+	rf.matchIndex = make([]int, len(rf.peers))
+
+	debugLog(rf, fmt.Sprintf("Promoted to leader. Current term: %d", rf.currentTerm))
 }
