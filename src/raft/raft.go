@@ -197,7 +197,7 @@ func (rf *Raft) ticker() {
 		// Check if a leader election should be started.
 
 		// pause for a random amount of time between 400 and 800 milliseconds
-		ms := 400 + (rand.Int63() % 800)
+		ms := 600 + (rand.Int63() % 1000)
 		debugLog(rf, fmt.Sprintf("Current election timeout is %d milliseconds", ms))
 
 		time.Sleep(time.Duration(ms) * time.Millisecond)
