@@ -9,7 +9,7 @@ type AppendEntriesArgs struct {
 	LeaderId     int
 	PrevLogIndex int
 	PrevLogTerm  int
-	Entries      []LogEntry
+	Entries      []*LogEntry
 	LeaderCommit int
 }
 
@@ -45,32 +45,26 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 		return
 	}
 
-	if args.PrevLogIndex > rf.logs.lastLogIndex {
-		debugLog(rf, fmt.Sprintf("The current server has less logs than the leader %d", args.LeaderId))
-		reply.Term = rf.currentTerm
-		reply.Success = false
-		return
+	if args.PrevLogIndex > 0 {
+		log := rf.logs.entryAt(args.PrevLogIndex)
+		if log == nil {
+			debugLog(rf, fmt.Sprintf("The current server does not have any logs at index %d", args.PrevLogIndex))
+			reply.Term = rf.currentTerm
+			reply.Success = false
+			return
+		}
+
+		if log.Term != args.PrevLogTerm {
+			debugLog(rf, fmt.Sprintf("The logs from current server does not have the same term as leader %d", args.LeaderId))
+			reply.Term = rf.currentTerm
+			reply.Success = false
+			return
+		}
 	}
 
-	// At this point, there are 2 possibilities:
-	// 1. PrevLogIndex is 0 and the server has no logs
-	// 2. PrevLogIndex is > 0 and the server has at least PrevLogIndex logs
-	// This condition follows case 2
-	// Use PrevLogIndex - 1 because log indices start from 1
-	if args.PrevLogIndex > 0 && args.PrevLogTerm != rf.logs.entryAt(args.PrevLogIndex).Term {
-		debugLog(rf, fmt.Sprintf("The logs from current server does not have the same term as leader %d", args.LeaderId))
-		reply.Term = rf.currentTerm
-		reply.Success = false
-		return
+	if len(args.Entries) > 0 {
+		rf.logs.overwriteLogs(args.PrevLogIndex+1, args.Entries)
 	}
-
-	// The log at rf.logs[PrevLogIndex-1] is the last one on this server that matches the leader's log.
-	// All logs after this differ from the leader's and should be discarded.
-	// if rf.logs.lastLogIndex > args.PrevLogIndex {
-	// 	rf.logs = rf.logs[:args.PrevLogIndex]
-	// }
-
-	// rf.logs = append(rf.logs, args.Entries...)
 
 	if args.LeaderCommit > rf.commitIndex {
 		if args.LeaderCommit > rf.logs.lastLogIndex {

@@ -18,6 +18,19 @@ func startHeartBeat(rf *Raft) {
 func sendHeartBeatLoop(rf *Raft, server int) {
 	var stopCh chan bool
 	for {
+		if rf.killed() {
+			return
+		}
+
+		shouldExit := false
+		withLock(&rf.mu, func() {
+			shouldExit = rf.state != leader
+		})
+
+		if shouldExit {
+			return
+		}
+
 		if stopCh != nil {
 			stopCh <- true
 		}
@@ -47,9 +60,10 @@ func sendHeartBeat(rf *Raft, server int, stopChan chan bool) {
 		args = &AppendEntriesArgs{
 			Term:         rf.currentTerm,
 			LeaderId:     rf.me,
-			PrevLogIndex: rf.logs.lastLogIndex,
-			PrevLogTerm:  rf.logs.lastLogTerm,
-			Entries:      []LogEntry{},
+			PrevLogIndex: prevLogIndexForServer(rf, server),
+			PrevLogTerm:  prevLogTermForServer(rf, server),
+			Entries:      logEntriesToSend(rf, server),
+			LeaderCommit: rf.commitIndex,
 		}
 	})
 

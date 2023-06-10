@@ -41,7 +41,6 @@ func startElection(rf *Raft) {
 
 func onLeaderElection(rf *Raft) {
 	rf.state = leader
-	startHeartBeat(rf)
 
 	nextIndex := make([]int, len(rf.peers))
 	for i := range nextIndex {
@@ -50,6 +49,8 @@ func onLeaderElection(rf *Raft) {
 
 	rf.nextIndex = nextIndex
 	rf.matchIndex = make([]int, len(rf.peers))
+
+	startHeartBeat(rf)
 
 	debugLog(rf, fmt.Sprintf("Promoted to leader. Current term: %d", rf.currentTerm))
 }
