@@ -47,8 +47,8 @@ func sendHeartBeat(rf *Raft, server int, stopChan chan bool) {
 		args = &AppendEntriesArgs{
 			Term:         rf.currentTerm,
 			LeaderId:     rf.me,
-			PrevLogIndex: rf.lastLogIndex(),
-			PrevLogTerm:  rf.lastLogTerm(),
+			PrevLogIndex: rf.logs.lastLogIndex,
+			PrevLogTerm:  rf.logs.lastLogTerm,
 			Entries:      []LogEntry{},
 		}
 	})

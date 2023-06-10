@@ -44,7 +44,7 @@ func handleRequestVotes(rf *Raft, args *RequestVoteArgs, reply *RequestVoteReply
 		return
 	}
 
-	if rf.votedFor == -1 && logsNoNewerThan(rf, args.LastLogIndex, args.LastLogTerm) {
+	if rf.votedFor == -1 && candidateAtLeastUpToDate(rf, args.LastLogIndex, args.LastLogTerm) {
 		rf.votedFor = args.CandidateId
 
 		reply.Term = rf.currentTerm
@@ -58,6 +58,15 @@ func handleRequestVotes(rf *Raft, args *RequestVoteArgs, reply *RequestVoteReply
 	reply.VoteGranted = false
 
 	debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d because it already voted for %d", args.CandidateId, rf.votedFor))
+}
+
+func candidateAtLeastUpToDate(rf *Raft, incLogIndex, incLogTerm int) bool {
+	if rf.logs.lastLogIndex == 0 && incLogIndex == 0 {
+		return true
+	}
+
+	return incLogIndex > rf.logs.lastLogIndex ||
+		(incLogIndex == rf.logs.lastLogIndex && incLogTerm >= rf.logs.lastLogTerm)
 }
 
 func requestVotesFromPeers(rf *Raft, term int) {
@@ -99,8 +108,8 @@ func requestVotesFromServer(rf *Raft, term int, server int) {
 
 		args.Term = term
 		args.CandidateId = rf.me
-		args.LastLogIndex = rf.lastLogIndex()
-		args.LastLogTerm = rf.lastLogTerm()
+		args.LastLogIndex = rf.logs.lastLogIndex
+		args.LastLogTerm = rf.logs.lastLogTerm
 	})
 
 	if shouldExit {

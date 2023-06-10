@@ -58,11 +58,6 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
-type LogEntry struct {
-	Command interface{}
-	Term    int
-}
-
 // A Go object implementing a single Raft peer.
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
@@ -78,7 +73,7 @@ type Raft struct {
 	votedFor            int
 	state               serverState
 	receivedRpcFromPeer bool
-	logs                []LogEntry
+	logs                *Logs
 
 	votesReceived                 int
 	requestVotesResponsesReceived int
@@ -160,13 +155,20 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	// rf.mu.Lock()
+	// defer rf.mu.Unlock()
 
-	// Your code here (2B).
+	// if rf.state != leader {
+	// 	return -1, -1, false
+	// }
 
-	return index, term, isLeader
+	// logEntry := LogEntry{Command: command, Term: rf.currentTerm}
+	// rf.logs = append(rf.logs, logEntry)
+
+	// go replicateLogsToAllServers(rf)
+
+	// return rf.logs.lastLogIndex, rf.currentTerm, true
+	return -1, -1, false
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -221,26 +223,6 @@ func (rf *Raft) resetToFollower(term int) {
 	rf.requestVotesResponsesReceived = 0
 }
 
-func (rf *Raft) lastLogIndex() int {
-	return len(rf.logs)
-}
-
-func (rf *Raft) lastLogTerm() int {
-	if rf.lastLogIndex() == 0 {
-		return 0
-	} else {
-		return rf.logs[rf.lastLogIndex()-1].Term
-	}
-}
-
-func (rf *Raft) logEntryAt(index int) *LogEntry {
-	if index <= 0 {
-		return nil
-	}
-
-	return &rf.logs[index-1]
-}
-
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
 // server's port is peers[me]. all the servers' peers[] arrays
@@ -266,7 +248,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		votedFor:            -1,
 		state:               follower,
 		receivedRpcFromPeer: false,
-		logs:                []LogEntry{},
+		logs:                makeLogs(),
 		commitIndex:         0,
 		lastApplied:         0,
 		nextIndex:           nextIndex,

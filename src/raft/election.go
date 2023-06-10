@@ -45,7 +45,7 @@ func onLeaderElection(rf *Raft) {
 
 	nextIndex := make([]int, len(rf.peers))
 	for i := range nextIndex {
-		nextIndex[i] = rf.lastLogIndex() + 1
+		nextIndex[i] = rf.logs.lastLogIndex + 1
 	}
 
 	rf.nextIndex = nextIndex

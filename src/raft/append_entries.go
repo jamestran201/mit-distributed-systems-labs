@@ -38,14 +38,14 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 		rf.resetToFollower(args.Term)
 	}
 
-	if args.PrevLogIndex == 0 && rf.lastLogIndex() > 0 {
+	if args.PrevLogIndex == 0 && rf.logs.lastLogIndex > 0 {
 		debugLog(rf, fmt.Sprintf("BIG WARNING!!! This server contains logs while leader %d has none. This should not happen!", args.LeaderId))
 		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
 	}
 
-	if args.PrevLogIndex > rf.lastLogIndex() {
+	if args.PrevLogIndex > rf.logs.lastLogIndex {
 		debugLog(rf, fmt.Sprintf("The current server has less logs than the leader %d", args.LeaderId))
 		reply.Term = rf.currentTerm
 		reply.Success = false
@@ -57,7 +57,7 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 	// 2. PrevLogIndex is > 0 and the server has at least PrevLogIndex logs
 	// This condition follows case 2
 	// Use PrevLogIndex - 1 because log indices start from 1
-	if args.PrevLogIndex > 0 && args.PrevLogTerm != rf.logEntryAt(args.PrevLogIndex).Term {
+	if args.PrevLogIndex > 0 && args.PrevLogTerm != rf.logs.entryAt(args.PrevLogIndex).Term {
 		debugLog(rf, fmt.Sprintf("The logs from current server does not have the same term as leader %d", args.LeaderId))
 		reply.Term = rf.currentTerm
 		reply.Success = false
@@ -66,15 +66,15 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 
 	// The log at rf.logs[PrevLogIndex-1] is the last one on this server that matches the leader's log.
 	// All logs after this differ from the leader's and should be discarded.
-	if rf.lastLogIndex() > args.PrevLogIndex {
-		rf.logs = rf.logs[:args.PrevLogIndex]
-	}
+	// if rf.logs.lastLogIndex > args.PrevLogIndex {
+	// 	rf.logs = rf.logs[:args.PrevLogIndex]
+	// }
 
-	rf.logs = append(rf.logs, args.Entries...)
+	// rf.logs = append(rf.logs, args.Entries...)
 
 	if args.LeaderCommit > rf.commitIndex {
-		if args.LeaderCommit > rf.lastLogIndex() {
-			rf.commitIndex = rf.lastLogIndex()
+		if args.LeaderCommit > rf.logs.lastLogIndex {
+			rf.commitIndex = rf.logs.lastLogIndex
 		} else {
 			rf.commitIndex = args.LeaderCommit
 		}
