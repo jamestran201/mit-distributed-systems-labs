@@ -76,10 +76,14 @@ func sendHeartBeat(rf *Raft, server int, stopChan chan bool) {
 	reply := &AppendEntriesReply{}
 	sendAppendEntries(rf, server, args, reply)
 
-	shouldExit = <-stopChan
-	if shouldExit {
-		return
-	}
-
-	handleAppendEntriesResponse(rf, reply)
+	// TODO: Not using stopChan for now. Not sure if it's needed.
+	// select {
+	// case shouldExit = <-stopChan:
+	// 	if shouldExit {
+	// 		return
+	// 	}
+	// default:
+	// 	handleAppendEntriesResponse(rf, reply)
+	// }
+	handleAppendEntriesResponse(rf, server, args, reply)
 }

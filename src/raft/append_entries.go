@@ -89,9 +89,14 @@ func sendAppendEntries(rf *Raft, server int, args *AppendEntriesArgs, reply *App
 	reply.RequestCompleted = ok
 }
 
-func handleAppendEntriesResponse(rf *Raft, reply *AppendEntriesReply) {
+func handleAppendEntriesResponse(rf *Raft, server int, args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+
+	if rf.killed() {
+		debugLog(rf, "Server is killed, skip handling AppendEntries response")
+		return
+	}
 
 	if rf.state != leader {
 		debugLog(rf, "Server is no longer the leader, skip handling AppendEntries response")
@@ -107,5 +112,14 @@ func handleAppendEntriesResponse(rf *Raft, reply *AppendEntriesReply) {
 		debugLog(rf, "Received AppendEntries response from server with higher term. Reset state to follower")
 		rf.resetToFollower(reply.Term)
 		return
+	}
+
+	if reply.Success {
+		rf.nextIndex[server] += len(args.Entries)
+		rf.matchIndex[server] = rf.nextIndex[server] - 1
+	} else {
+		if rf.nextIndex[server] >= 1 {
+			rf.nextIndex[server]--
+		}
 	}
 }
