@@ -60,31 +60,31 @@ type ApplyMsg struct {
 
 // A Go object implementing a single Raft peer.
 type Raft struct {
+	applyCh   chan ApplyMsg
+	dead      int32               // set by Kill()
+	me        int                 // this peer's index into peers[]
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
-	me        int                 // this peer's index into peers[]
-	dead      int32               // set by Kill()
 
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
-	currentTerm         int
-	votedFor            int
-	state               serverState
-	receivedRpcFromPeer bool
-	logs                *Logs
-
-	votesReceived                 int
-	requestVotesResponsesReceived int
+	// Persistent states on all servers
+	currentTerm int
+	logs        *Logs
+	votedFor    int
 
 	// Available to all servers
+	receivedRpcFromPeer           bool
+	requestVotesResponsesReceived int
+	state                         serverState
+	votesReceived                 int
+
+	// Volatile state on all servers
 	commitIndex int
 	lastApplied int
 
-	// Leader only
-	nextIndex  []int
+	// Leader only, volatile state
 	matchIndex []int
+	nextIndex  []int
 }
 
 func (rf *Raft) GetState() (int, bool) {
@@ -221,6 +221,49 @@ func (rf *Raft) resetToFollower(term int) {
 	rf.requestVotesResponsesReceived = 0
 }
 
+func (rf *Raft) updateCommitIndexIfPossible(logIndex int) {
+	if logIndex <= rf.commitIndex {
+		return
+	}
+
+	if rf.logs.entryAt(logIndex).Term != rf.currentTerm {
+		return
+	}
+
+	// start at 1 because we know that the current server already has a log at logIndex based on the condition above
+	replicatedCount := 1
+	for s := range rf.peers {
+		if s == rf.me {
+			continue
+		}
+
+		if rf.matchIndex[s] >= logIndex {
+			replicatedCount++
+		}
+	}
+
+	if replicatedCount > rf.majorityCount() {
+		rf.commitIndex = logIndex
+		debugLog(rf, fmt.Sprintf("Commit index updated to %d", rf.commitIndex))
+
+		rf.notifyServiceOfCommittedLog()
+	}
+}
+
+func (rf *Raft) majorityCount() int {
+	return len(rf.peers) / 2
+}
+
+func (rf *Raft) notifyServiceOfCommittedLog() {
+	msg := ApplyMsg{
+		CommandValid: true,
+		Command:      rf.logs.entryAt(rf.commitIndex).Command,
+		CommandIndex: rf.commitIndex,
+	}
+
+	rf.applyCh <- msg
+}
+
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
 // server's port is peers[me]. all the servers' peers[] arrays
@@ -239,18 +282,19 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	}
 
 	rf := &Raft{
+		applyCh:             applyCh,
+		commitIndex:         0,
+		currentTerm:         0,
+		lastApplied:         0,
+		logs:                makeLogs(),
+		matchIndex:          make([]int, len(peers)),
+		me:                  me,
+		nextIndex:           nextIndex,
 		peers:               peers,
 		persister:           persister,
-		me:                  me,
-		currentTerm:         0,
-		votedFor:            -1,
-		state:               follower,
 		receivedRpcFromPeer: false,
-		logs:                makeLogs(),
-		commitIndex:         0,
-		lastApplied:         0,
-		nextIndex:           nextIndex,
-		matchIndex:          make([]int, len(peers)),
+		state:               follower,
+		votedFor:            -1,
 	}
 
 	// initialize from state persisted before a crash

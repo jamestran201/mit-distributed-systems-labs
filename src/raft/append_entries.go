@@ -78,6 +78,8 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 		} else {
 			rf.commitIndex = args.LeaderCommit
 		}
+
+		rf.notifyServiceOfCommittedLog()
 	}
 
 	reply.Term = rf.currentTerm
@@ -178,6 +180,8 @@ func handleAppendEntriesResponse(rf *Raft, server int, args *AppendEntriesArgs, 
 		rf.nextIndex[server] += len(args.Entries)
 		rf.matchIndex[server] = rf.nextIndex[server] - 1
 		debugLog(rf, fmt.Sprintf("AppendEntries was successful for %d", server))
+
+		rf.updateCommitIndexIfPossible(rf.matchIndex[server])
 
 		return success
 	} else {

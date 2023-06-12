@@ -187,7 +187,7 @@ func updateVotesReceived(rf *Raft, voteGranted bool, server int) {
 		debugLog(rf, fmt.Sprintf("Received vote from %d", server))
 	}
 
-	if rf.votesReceived > len(rf.peers)/2 {
+	if rf.votesReceived > rf.majorityCount() {
 		onLeaderElection(rf)
 	} else if rf.requestVotesResponsesReceived >= len(rf.peers)-1 {
 		debugLog(rf, fmt.Sprintf("Candidate did not receive enough votes to become leader. Current term: %d", rf.currentTerm))
