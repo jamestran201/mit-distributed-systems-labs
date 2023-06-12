@@ -52,3 +52,12 @@ func (l *Logs) overwriteLogs(index int, entries []*LogEntry) {
 	l.lastLogIndex = newLastLogIndex
 	l.lastLogTerm = l.entries[newLastLogIndex].Term
 }
+
+func (l *Logs) appendLog(command interface{}, term int) {
+	l.lastLogIndex++
+	l.lastLogTerm = term
+	l.entries[l.lastLogIndex] = &LogEntry{
+		Command: command,
+		Term:    term,
+	}
+}

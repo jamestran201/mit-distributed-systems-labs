@@ -155,20 +155,18 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	// rf.mu.Lock()
-	// defer rf.mu.Unlock()
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
-	// if rf.state != leader {
-	// 	return -1, -1, false
-	// }
+	if rf.state != leader {
+		return -1, -1, false
+	}
 
-	// logEntry := LogEntry{Command: command, Term: rf.currentTerm}
-	// rf.logs = append(rf.logs, logEntry)
+	rf.logs.appendLog(command, rf.currentTerm)
 
-	// go replicateLogsToAllServers(rf)
+	go replicateLogsToAllServers(rf)
 
-	// return rf.logs.lastLogIndex, rf.currentTerm, true
-	return -1, -1, false
+	return rf.logs.lastLogIndex, rf.currentTerm, true
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,

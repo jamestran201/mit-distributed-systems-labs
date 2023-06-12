@@ -4,6 +4,12 @@ import (
 	"fmt"
 )
 
+const (
+	success = iota
+	failure
+	terminate
+)
+
 type AppendEntriesArgs struct {
 	Term         int
 	LeaderId     int
@@ -78,48 +84,108 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 	reply.Success = true
 }
 
-func sendAppendEntries(rf *Raft, server int, args *AppendEntriesArgs, reply *AppendEntriesReply) {
+func callAppendEntries(rf *Raft, server int, isHeartbeat bool) {
 	if rf.killed() {
 		return
 	}
 
+	shouldExit := false
+	var args *AppendEntriesArgs
+	withLock(&rf.mu, func() {
+		if rf.state != leader {
+			shouldExit = true
+
+			debugLog(rf, "Exiting callAppendEntries routine because server is no longer the leader")
+			return
+		}
+
+		args = makeAppendEntriesRequest(rf, server)
+	})
+
+	if shouldExit {
+		return
+	}
+
+	reply := &AppendEntriesReply{}
+	sendAppendEntries(rf, server, args, reply)
+	resultCode := handleAppendEntriesResponse(rf, server, args, reply)
+	if resultCode == failure && !isHeartbeat {
+		go callAppendEntries(rf, server, isHeartbeat)
+	}
+}
+
+func makeAppendEntriesRequest(rf *Raft, server int) *AppendEntriesArgs {
+	return &AppendEntriesArgs{
+		Term:         rf.currentTerm,
+		LeaderId:     rf.me,
+		PrevLogIndex: prevLogIndexForServer(rf, server),
+		PrevLogTerm:  prevLogTermForServer(rf, server),
+		Entries:      logEntriesToSend(rf, server),
+		LeaderCommit: rf.commitIndex,
+	}
+}
+
+func prevLogIndexForServer(rf *Raft, server int) int {
+	return rf.nextIndex[server] - 1
+}
+
+func prevLogTermForServer(rf *Raft, server int) int {
+	logEntry := rf.logs.entryAt(prevLogIndexForServer(rf, server))
+	if logEntry == nil {
+		return 0
+	} else {
+		return logEntry.Term
+	}
+}
+
+func logEntriesToSend(rf *Raft, server int) []*LogEntry {
+	return rf.logs.startingFrom(rf.nextIndex[server])
+}
+
+func sendAppendEntries(rf *Raft, server int, args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	debugLog(rf, fmt.Sprintf("Sending AppendEntries to %d", server))
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	reply.RequestCompleted = ok
 }
 
-func handleAppendEntriesResponse(rf *Raft, server int, args *AppendEntriesArgs, reply *AppendEntriesReply) {
+func handleAppendEntriesResponse(rf *Raft, server int, args *AppendEntriesArgs, reply *AppendEntriesReply) int {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
 	if rf.killed() {
 		debugLog(rf, "Server is killed, skip handling AppendEntries response")
-		return
+		return terminate
 	}
 
 	if rf.state != leader {
 		debugLog(rf, "Server is no longer the leader, skip handling AppendEntries response")
-		return
+		return terminate
 	}
 
 	if !reply.RequestCompleted {
 		debugLog(rf, "An AppendEntry request could not be processed successfully")
-		return
+		return terminate
 	}
 
 	if reply.Term > rf.currentTerm {
 		debugLog(rf, "Received AppendEntries response from server with higher term. Reset state to follower")
 		rf.resetToFollower(reply.Term)
-		return
+		return terminate
 	}
 
 	if reply.Success {
 		rf.nextIndex[server] += len(args.Entries)
 		rf.matchIndex[server] = rf.nextIndex[server] - 1
+		debugLog(rf, fmt.Sprintf("AppendEntries was successful for %d", server))
+
+		return success
 	} else {
+		debugLog(rf, fmt.Sprintf("AppendEntries was unsuccessful for server %d", server))
 		if rf.nextIndex[server] >= 1 {
 			rf.nextIndex[server]--
 		}
+
+		return failure
 	}
 }
