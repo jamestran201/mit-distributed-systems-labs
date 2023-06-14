@@ -163,6 +163,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 
 	rf.logs.appendLog(command, rf.currentTerm)
+	debugLog(rf, fmt.Sprintf("Received command from client. Last log index: %d", rf.logs.lastLogIndex))
 
 	go replicateLogsToAllServers(rf)
 
@@ -243,10 +244,11 @@ func (rf *Raft) updateCommitIndexIfPossible(logIndex int) {
 	}
 
 	if replicatedCount > rf.majorityCount() {
+		prevCommitIndex := rf.commitIndex
 		rf.commitIndex = logIndex
 		debugLog(rf, fmt.Sprintf("Commit index updated to %d", rf.commitIndex))
 
-		rf.notifyServiceOfCommittedLog()
+		rf.notifyServiceOfCommittedLog(prevCommitIndex)
 	}
 }
 
@@ -254,14 +256,20 @@ func (rf *Raft) majorityCount() int {
 	return len(rf.peers) / 2
 }
 
-func (rf *Raft) notifyServiceOfCommittedLog() {
-	msg := ApplyMsg{
-		CommandValid: true,
-		Command:      rf.logs.entryAt(rf.commitIndex).Command,
-		CommandIndex: rf.commitIndex,
-	}
+func (rf *Raft) notifyServiceOfCommittedLog(prevCommitIndex int) {
+	for i := prevCommitIndex; i <= rf.commitIndex; i++ {
+		if i < 1 {
+			continue
+		}
 
-	rf.applyCh <- msg
+		msg := ApplyMsg{
+			CommandValid: true,
+			Command:      rf.logs.entryAt(i).Command,
+			CommandIndex: i,
+		}
+
+		rf.applyCh <- msg
+	}
 }
 
 // the service or tester wants to create a Raft server. the ports

@@ -57,7 +57,13 @@ func handleRequestVotes(rf *Raft, args *RequestVoteArgs, reply *RequestVoteReply
 	reply.Term = rf.currentTerm
 	reply.VoteGranted = false
 
-	debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d because it already voted for %d", args.CandidateId, rf.votedFor))
+	if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
+		debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d because it already voted for %d", args.CandidateId, rf.votedFor))
+	} else if !candidateAtLeastUpToDate(rf, args) {
+		debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d because it's log is not at least up to date", args.CandidateId))
+	} else {
+		debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d for unknown reason", args.CandidateId))
+	}
 }
 
 func candidateAtLeastUpToDate(rf *Raft, args *RequestVoteArgs) bool {

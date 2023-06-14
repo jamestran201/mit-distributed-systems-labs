@@ -70,16 +70,19 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 
 	if len(args.Entries) > 0 {
 		rf.logs.overwriteLogs(args.PrevLogIndex+1, args.Entries)
+		debugLog(rf, fmt.Sprintf("Reconciled logs. Last log index %d. Last log term %d. Current term %d.", rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.currentTerm))
 	}
 
 	if args.LeaderCommit > rf.commitIndex {
+		prevCommitIndex := rf.commitIndex
 		if args.LeaderCommit > rf.logs.lastLogIndex {
 			rf.commitIndex = rf.logs.lastLogIndex
 		} else {
 			rf.commitIndex = args.LeaderCommit
 		}
+		debugLog(rf, fmt.Sprintf("Commit index updated to %d", rf.commitIndex))
 
-		rf.notifyServiceOfCommittedLog()
+		rf.notifyServiceOfCommittedLog(prevCommitIndex)
 	}
 
 	reply.Term = rf.currentTerm
