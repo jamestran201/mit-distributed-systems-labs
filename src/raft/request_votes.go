@@ -34,9 +34,9 @@ func handleRequestVotes(rf *Raft, args *RequestVoteArgs, reply *RequestVoteReply
 		rf.resetToFollower(args.Term)
 	}
 
-	rf.receivedRpcFromPeer = true
-
 	if rf.votedFor == args.CandidateId {
+		rf.votedFor = args.CandidateId
+
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = true
 
@@ -45,6 +45,7 @@ func handleRequestVotes(rf *Raft, args *RequestVoteArgs, reply *RequestVoteReply
 	}
 
 	if rf.votedFor == -1 && candidateAtLeastUpToDate(rf, args) {
+		rf.receivedRpcFromPeer = true
 		rf.votedFor = args.CandidateId
 
 		reply.Term = rf.currentTerm
