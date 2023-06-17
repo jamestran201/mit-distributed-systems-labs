@@ -180,9 +180,14 @@ func handleAppendEntriesResponse(rf *Raft, server int, args *AppendEntriesArgs, 
 	}
 
 	if reply.Success {
+		if args.PrevLogIndex < prevLogIndexForServer(rf, server) {
+			debugLog(rf, fmt.Sprintf("Received a stale AppendEntries response from server %d. Skip processing response.", server))
+			return terminate
+		}
+
 		rf.nextIndex[server] += len(args.Entries)
 		rf.matchIndex[server] = rf.nextIndex[server] - 1
-		debugLog(rf, fmt.Sprintf("AppendEntries was successful for %d", server))
+		debugLog(rf, fmt.Sprintf("AppendEntries was successful for %d. NextIndex: %d. MatchIndex: %d", server, rf.nextIndex[server], rf.matchIndex[server]))
 
 		rf.updateCommitIndexIfPossible(rf.matchIndex[server])
 

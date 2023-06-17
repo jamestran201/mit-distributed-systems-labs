@@ -227,6 +227,7 @@ func (rf *Raft) updateCommitIndexIfPossible(logIndex int) {
 		return
 	}
 
+	// debugLog(rf, fmt.Sprintf("Trying to access index %d. Logs: %v", logIndex, rf.logs.entries))
 	if rf.logs.entryAt(logIndex).Term != rf.currentTerm {
 		return
 	}
