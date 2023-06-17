@@ -105,6 +105,7 @@ func callAppendEntries(rf *Raft, server int, isHeartbeat bool) {
 		}
 
 		args = makeAppendEntriesRequest(rf, server)
+		// debugLog(rf, fmt.Sprintf("Making AppendEntries request to %d. Term %d. PrevLogIndex %d. PrevLogTerm %d. Entries %v. LeaderCommit %d", server, args.Term, args.PrevLogIndex, args.PrevLogTerm, args.Entries, args.LeaderCommit))
 	})
 
 	if shouldExit {
@@ -194,7 +195,7 @@ func handleAppendEntriesResponse(rf *Raft, server int, args *AppendEntriesArgs, 
 		return success
 	} else {
 		debugLog(rf, fmt.Sprintf("AppendEntries was unsuccessful for server %d", server))
-		if rf.nextIndex[server] >= 1 {
+		if rf.nextIndex[server] > 1 {
 			rf.nextIndex[server]--
 		}
 
