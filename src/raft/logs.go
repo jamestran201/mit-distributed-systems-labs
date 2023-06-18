@@ -37,7 +37,7 @@ func (l *Logs) startingFrom(index int) []*LogEntry {
 
 func (l *Logs) overwriteLogs(index int, entries []*LogEntry) {
 	oldLastLogIndex := l.lastLogIndex
-	newLastLogIndex := l.lastLogIndex
+	newLastLogIndex := index - 1
 	curIndex := index
 	for i := 0; i < len(entries); i++ {
 		l.entries[curIndex] = entries[i]
@@ -60,4 +60,16 @@ func (l *Logs) appendLog(command interface{}, term int) {
 		Command: command,
 		Term:    term,
 	}
+}
+
+func (l *Logs) firstIndexOfTerm(term int) int {
+	result := -1
+	for index, entry := range l.entries {
+		if entry.Term == term {
+			result = index
+			break
+		}
+	}
+
+	return result
 }

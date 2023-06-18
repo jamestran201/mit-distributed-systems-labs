@@ -163,7 +163,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 
 	rf.logs.appendLog(command, rf.currentTerm)
-	debugLog(rf, fmt.Sprintf("Received command from client. Last log index: %d", rf.logs.lastLogIndex))
+	debugLog(rf, fmt.Sprintf("Received command from client. Last log index: %d. Last log term: %d", rf.logs.lastLogIndex, rf.logs.lastLogTerm))
 
 	go replicateLogsToAllServers(rf)
 

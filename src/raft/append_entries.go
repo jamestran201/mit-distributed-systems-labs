@@ -20,9 +20,10 @@ type AppendEntriesArgs struct {
 }
 
 type AppendEntriesReply struct {
-	Term             int
-	Success          bool
-	RequestCompleted bool
+	Term                  int
+	Success               bool
+	RequestCompleted      bool
+	FirstConflictingIndex int
 }
 
 func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -48,6 +49,7 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 		debugLog(rf, fmt.Sprintf("BIG WARNING!!! This server contains logs while leader %d has none. This should not happen!", args.LeaderId))
 		reply.Term = rf.currentTerm
 		reply.Success = false
+		reply.FirstConflictingIndex = rf.logs.lastLogIndex
 		return
 	}
 
@@ -57,6 +59,7 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 			debugLog(rf, fmt.Sprintf("The current server does not have any logs at index %d", args.PrevLogIndex))
 			reply.Term = rf.currentTerm
 			reply.Success = false
+			reply.FirstConflictingIndex = rf.logs.lastLogIndex + 1
 			return
 		}
 
@@ -64,11 +67,15 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 			debugLog(rf, fmt.Sprintf("The logs from current server does not have the same term as leader %d", args.LeaderId))
 			reply.Term = rf.currentTerm
 			reply.Success = false
+			reply.FirstConflictingIndex = rf.logs.firstIndexOfTerm(log.Term)
 			return
 		}
 	}
 
 	if len(args.Entries) > 0 {
+		rf.logs.overwriteLogs(args.PrevLogIndex+1, args.Entries)
+		debugLog(rf, fmt.Sprintf("Reconciled logs. Last log index %d. Last log term %d. Current term %d.", rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.currentTerm))
+	} else if len(args.Entries) == 0 && rf.logs.lastLogIndex > args.PrevLogIndex {
 		rf.logs.overwriteLogs(args.PrevLogIndex+1, args.Entries)
 		debugLog(rf, fmt.Sprintf("Reconciled logs. Last log index %d. Last log term %d. Current term %d.", rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.currentTerm))
 	}
@@ -105,7 +112,6 @@ func callAppendEntries(rf *Raft, server int, isHeartbeat bool) {
 		}
 
 		args = makeAppendEntriesRequest(rf, server)
-		// debugLog(rf, fmt.Sprintf("Making AppendEntries request to %d. Term %d. PrevLogIndex %d. PrevLogTerm %d. Entries %v. LeaderCommit %d", server, args.Term, args.PrevLogIndex, args.PrevLogTerm, args.Entries, args.LeaderCommit))
 	})
 
 	if shouldExit {
@@ -149,7 +155,7 @@ func logEntriesToSend(rf *Raft, server int) []*LogEntry {
 }
 
 func sendAppendEntries(rf *Raft, server int, args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	debugLog(rf, fmt.Sprintf("Sending AppendEntries to %d", server))
+	debugLog(rf, fmt.Sprintf("Making AppendEntries request to %d. Term %d. PrevLogIndex %d. PrevLogTerm %d. Entries %v. LeaderCommit %d", server, args.Term, args.PrevLogIndex, args.PrevLogTerm, args.Entries, args.LeaderCommit))
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	reply.RequestCompleted = ok
@@ -195,8 +201,10 @@ func handleAppendEntriesResponse(rf *Raft, server int, args *AppendEntriesArgs, 
 		return success
 	} else {
 		debugLog(rf, fmt.Sprintf("AppendEntries was unsuccessful for server %d", server))
-		if rf.nextIndex[server] > 1 {
-			rf.nextIndex[server]--
+		if reply.FirstConflictingIndex > 0 && reply.FirstConflictingIndex != rf.matchIndex[server] {
+			rf.nextIndex[server] = reply.FirstConflictingIndex
+			debugLog(rf, fmt.Sprintf("First conflicting index for server %d is %d", server, reply.FirstConflictingIndex))
+			debugLog(rf, fmt.Sprintf("logs: %v", rf.logs.entries))
 		}
 
 		return failure
