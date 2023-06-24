@@ -29,7 +29,7 @@ func sendHeartBeatLoop(rf *Raft, server int) {
 			return
 		}
 
-		go callAppendEntries(rf, server, true)
+		go callAppendEntries(rf, server, true, "")
 
 		time.Sleep(300 * time.Millisecond)
 	}

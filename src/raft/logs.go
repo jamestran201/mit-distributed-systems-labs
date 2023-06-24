@@ -1,8 +1,14 @@
 package raft
 
+import "fmt"
+
 type LogEntry struct {
 	Command interface{}
 	Term    int
+}
+
+func (e *LogEntry) String() string {
+	return fmt.Sprintf("{Command: %v, Term: %d}", e.Command, e.Term)
 }
 
 type Logs struct {
@@ -33,6 +39,34 @@ func (l *Logs) startingFrom(index int) []*LogEntry {
 	}
 
 	return entries
+}
+
+func (l *Logs) reconcile(index int, entries []*LogEntry) {
+	// debugLogForRequest(rf, traceId, fmt.Sprintf("Starting at %d", index))
+	i := 0
+	startIndex := index
+	for ; startIndex <= l.lastLogIndex; startIndex++ {
+		if i >= len(entries) {
+			break
+		}
+
+		log := l.entries[startIndex]
+		if log.Term != entries[i].Term {
+			// debugLogForRequest(rf, traceId, "BREAKING")
+			break
+		}
+
+		i++
+	}
+
+	// no new logs to append
+	if i >= len(entries) {
+		return
+	}
+
+	// debugLogForRequest(rf, traceId, fmt.Sprintf("startIndex: %d, i: %d", startIndex, i))
+	// there could be conflicting logs, or a new log to append
+	l.overwriteLogs(startIndex, entries[i:])
 }
 
 func (l *Logs) overwriteLogs(index int, entries []*LogEntry) {

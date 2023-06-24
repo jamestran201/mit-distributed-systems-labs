@@ -265,7 +265,7 @@ func (rf *Raft) updateCommitIndexIfPossible(logIndex int) {
 	if replicatedCount > rf.majorityCount() {
 		prevCommitIndex := rf.commitIndex
 		rf.commitIndex = logIndex
-		debugLog(rf, fmt.Sprintf("Commit index updated to %d", rf.commitIndex))
+		debugLog(rf, fmt.Sprintf("Commit index updated to %d. Logs %v.", rf.commitIndex, rf.logs.entries))
 
 		rf.notifyServiceOfCommittedLog(prevCommitIndex)
 	}

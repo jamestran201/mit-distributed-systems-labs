@@ -81,15 +81,19 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 	}
 
 	if len(args.Entries) > 0 {
-		rf.logs.overwriteLogs(args.PrevLogIndex+1, args.Entries)
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Before reconciling logs: %v", rf.logs.entries))
+
+		rf.logs.reconcile(args.PrevLogIndex+1, args.Entries)
 		rf.persist()
 
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Reconciled logs. Last log index %d. Last log term %d. Current term %d.", rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.currentTerm))
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Reconciled logs. Logs: %v", rf.logs.entries))
 	} else if len(args.Entries) == 0 && rf.logs.lastLogIndex > args.PrevLogIndex {
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Before reconciling logs: %v", rf.logs.entries))
+
 		rf.logs.overwriteLogs(args.PrevLogIndex+1, args.Entries)
 		rf.persist()
 
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Reconciled logs. Last log index %d. Last log term %d. Current term %d.", rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.currentTerm))
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Removed extra logs. %v", rf.logs.entries))
 	}
 
 	if args.LeaderCommit > rf.commitIndex {
@@ -99,7 +103,7 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 		} else {
 			rf.commitIndex = args.LeaderCommit
 		}
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Commit index updated to %d", rf.commitIndex))
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Commit index updated to %d. Logs: %v", rf.commitIndex, rf.logs.entries))
 
 		rf.notifyServiceOfCommittedLog(prevCommitIndex)
 	}
@@ -108,7 +112,7 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 	reply.Success = true
 }
 
-func callAppendEntries(rf *Raft, server int, isHeartbeat bool) {
+func callAppendEntries(rf *Raft, server int, isHeartbeat bool, traceId string) {
 	if rf.killed() {
 		return
 	}
@@ -123,7 +127,12 @@ func callAppendEntries(rf *Raft, server int, isHeartbeat bool) {
 			return
 		}
 
-		args = makeAppendEntriesRequest(rf, server)
+		if !isHeartbeat && rf.logs.lastLogIndex < rf.nextIndex[server] {
+			shouldExit = true
+			debugLog(rf, fmt.Sprintf("Exiting callAppendEntries routine because logs for %d is up to date", server))
+		}
+
+		args = makeAppendEntriesRequest(rf, server, traceId)
 	})
 
 	if shouldExit {
@@ -134,11 +143,15 @@ func callAppendEntries(rf *Raft, server int, isHeartbeat bool) {
 	sendAppendEntries(rf, server, args, reply)
 	resultCode := handleAppendEntriesResponse(rf, server, args, reply)
 	if resultCode == failure && !isHeartbeat {
-		go callAppendEntries(rf, server, isHeartbeat)
+		go callAppendEntries(rf, server, isHeartbeat, traceId)
 	}
 }
 
-func makeAppendEntriesRequest(rf *Raft, server int) *AppendEntriesArgs {
+func makeAppendEntriesRequest(rf *Raft, server int, traceId string) *AppendEntriesArgs {
+	if traceId == "" {
+		traceId = generateUniqueString()
+	}
+
 	return &AppendEntriesArgs{
 		Term:         rf.currentTerm,
 		LeaderId:     rf.me,
@@ -146,7 +159,7 @@ func makeAppendEntriesRequest(rf *Raft, server int) *AppendEntriesArgs {
 		PrevLogTerm:  prevLogTermForServer(rf, server),
 		Entries:      logEntriesToSend(rf, server),
 		LeaderCommit: rf.commitIndex,
-		TraceId:      generateUniqueString(),
+		TraceId:      traceId,
 	}
 }
 
@@ -223,14 +236,23 @@ func handleAppendEntriesResponse(rf *Raft, server int, args *AppendEntriesArgs, 
 		return success
 	} else {
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("AppendEntries was unsuccessful for server %d", server))
-		if reply.FirstConflictingIndex > 0 && reply.FirstConflictingIndex != rf.matchIndex[server] {
+
+		if reply.FirstConflictingIndex == rf.matchIndex[server] {
+			debugLogForRequest(rf, args.TraceId, "Conflicting index is the same as matchIndex. Skipping")
+			return terminate
+		}
+
+		if reply.FirstConflictingIndex > 0 {
 			rf.nextIndex[server] = reply.FirstConflictingIndex
 			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("First conflicting index for server %d is %d", server, reply.FirstConflictingIndex))
 			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Leader logs: %v", rf.logs.entries))
-		} else {
-			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Pay attention here! First conflicting index for server %d is %d. MatchIndex: %d", server, reply.FirstConflictingIndex, rf.matchIndex[server]))
-		}
 
-		return failure
+			return failure
+		} else {
+			rf.nextIndex[server] = 1
+			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("First conflicting index for server %d is %d. Set nextIndex to 1", server, reply.FirstConflictingIndex))
+
+			return failure
+		}
 	}
 }

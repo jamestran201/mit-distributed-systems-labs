@@ -6,6 +6,6 @@ func replicateLogsToAllServers(rf *Raft) {
 			continue
 		}
 
-		go callAppendEntries(rf, server, false)
+		go callAppendEntries(rf, server, false, "")
 	}
 }
