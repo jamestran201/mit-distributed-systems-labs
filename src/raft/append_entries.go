@@ -222,11 +222,13 @@ func handleAppendEntriesResponse(rf *Raft, server int, args *AppendEntriesArgs, 
 
 		return success
 	} else {
-		debugLog(rf, fmt.Sprintf("AppendEntries was unsuccessful for server %d", server))
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("AppendEntries was unsuccessful for server %d", server))
 		if reply.FirstConflictingIndex > 0 && reply.FirstConflictingIndex != rf.matchIndex[server] {
 			rf.nextIndex[server] = reply.FirstConflictingIndex
 			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("First conflicting index for server %d is %d", server, reply.FirstConflictingIndex))
 			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Leader logs: %v", rf.logs.entries))
+		} else {
+			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Pay attention here! First conflicting index for server %d is %d. MatchIndex: %d", server, reply.FirstConflictingIndex, rf.matchIndex[server]))
 		}
 
 		return failure
