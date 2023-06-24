@@ -155,7 +155,7 @@ func requestVotesFromServer(rf *Raft, term int, server int) {
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
 func sendRequestVote(rf *Raft, server int, args *RequestVoteArgs, reply *RequestVoteReply) {
-	debugLog(rf, fmt.Sprintf("Sending RequestVote to %d", server))
+	debugLogPlain(rf, fmt.Sprintf("Sending RequestVote to %d", server))
 
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	reply.RequestCompleted = ok

@@ -177,7 +177,7 @@ func logEntriesToSend(rf *Raft, server int) []*LogEntry {
 }
 
 func sendAppendEntries(rf *Raft, server int, args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Making AppendEntries request to %d. Term %d. PrevLogIndex %d. PrevLogTerm %d. Entries %v. LeaderCommit %d.", server, args.Term, args.PrevLogIndex, args.PrevLogTerm, args.Entries, args.LeaderCommit))
+	debugLogForRequestPlain(rf, args.TraceId, fmt.Sprintf("Making AppendEntries request to %d. Term %d. PrevLogIndex %d. PrevLogTerm %d. Entries %v. LeaderCommit %d.", server, args.Term, args.PrevLogIndex, args.PrevLogTerm, args.Entries, args.LeaderCommit))
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	reply.RequestCompleted = ok

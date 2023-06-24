@@ -198,7 +198,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
 
-	debugLog(rf, "Server is killed")
+	debugLogPlain(rf, "Server is killed")
 }
 
 func (rf *Raft) killed() bool {
@@ -213,10 +213,10 @@ func (rf *Raft) ticker() {
 
 		// pause for a random amount of time between 400 and 800 milliseconds
 		ms := 600 + (rand.Int63() % 1000)
-		debugLog(rf, fmt.Sprintf("Current election timeout is %d milliseconds", ms))
+		debugLogPlain(rf, fmt.Sprintf("Current election timeout is %d milliseconds", ms))
 
 		time.Sleep(time.Duration(ms) * time.Millisecond)
-		debugLog(rf, "Election timeout period elapsed")
+		debugLogPlain(rf, "Election timeout period elapsed")
 
 		considerStartingElection(rf)
 	}
@@ -327,7 +327,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	debugLog(rf, "Starting server")
+	debugLogPlain(rf, "Starting server")
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
