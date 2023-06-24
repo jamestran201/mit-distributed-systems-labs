@@ -82,10 +82,12 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 
 	if len(args.Entries) > 0 {
 		rf.logs.overwriteLogs(args.PrevLogIndex+1, args.Entries)
+		rf.persist()
 
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Reconciled logs. Last log index %d. Last log term %d. Current term %d.", rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.currentTerm))
 	} else if len(args.Entries) == 0 && rf.logs.lastLogIndex > args.PrevLogIndex {
 		rf.logs.overwriteLogs(args.PrevLogIndex+1, args.Entries)
+		rf.persist()
 
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Reconciled logs. Last log index %d. Last log term %d. Current term %d.", rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.currentTerm))
 	}

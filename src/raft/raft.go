@@ -18,14 +18,14 @@ package raft
 //
 
 import (
-	//	"bytes"
+	"bytes"
 	"fmt"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	//	"6.5840/labgob"
+	"6.5840/labgob"
 	"6.5840/labrpc"
 )
 
@@ -56,6 +56,14 @@ type ApplyMsg struct {
 	Snapshot      []byte
 	SnapshotTerm  int
 	SnapshotIndex int
+}
+
+type PersistentState struct {
+	CurrentTerm  int
+	LogEntries   map[int]*LogEntry
+	LastLogIndex int
+	LastLogTerm  int
+	VotedFor     int
 }
 
 // A Go object implementing a single Raft peer.
@@ -103,14 +111,19 @@ func (rf *Raft) GetState() (int, bool) {
 // after you've implemented snapshots, pass the current snapshot
 // (or nil if there's not yet a snapshot).
 func (rf *Raft) persist() {
-	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// raftstate := w.Bytes()
-	// rf.persister.Save(raftstate, nil)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	ps := PersistentState{
+		CurrentTerm:  rf.currentTerm,
+		LogEntries:   rf.logs.entries,
+		LastLogIndex: rf.logs.lastLogIndex,
+		LastLogTerm:  rf.logs.lastLogTerm,
+		VotedFor:     rf.votedFor,
+	}
+	e.Encode(ps)
+
+	raftstate := w.Bytes()
+	rf.persister.Save(raftstate, nil)
 }
 
 // restore previously persisted state.
@@ -118,19 +131,21 @@ func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
-	// Your code here (2C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var ps PersistentState
+	if err := d.Decode(&ps); err != nil {
+		panic(err)
+	} else {
+		rf.currentTerm = ps.CurrentTerm
+		rf.logs.entries = ps.LogEntries
+		rf.logs.lastLogIndex = ps.LastLogIndex
+		rf.logs.lastLogTerm = ps.LastLogTerm
+		rf.votedFor = ps.VotedFor
+
+		debugLog(rf, fmt.Sprintf("Restored persistent state. Current term: %d. Voted for: %d. Last log index: %d. Last log term: %d", rf.currentTerm, rf.votedFor, rf.logs.lastLogIndex, rf.logs.lastLogTerm))
+	}
 }
 
 // the service says it has created a snapshot that has
@@ -163,6 +178,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 
 	rf.logs.appendLog(command, rf.currentTerm)
+	rf.persist()
 	debugLog(rf, fmt.Sprintf("Received command from client. Last log index: %d. Last log term: %d", rf.logs.lastLogIndex, rf.logs.lastLogTerm))
 
 	go replicateLogsToAllServers(rf)
@@ -220,6 +236,8 @@ func (rf *Raft) resetToFollower(term int) {
 	rf.votedFor = -1
 	rf.votesReceived = 0
 	rf.requestVotesResponsesReceived = 0
+
+	rf.persist()
 }
 
 func (rf *Raft) updateCommitIndexIfPossible(logIndex int) {

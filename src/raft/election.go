@@ -36,6 +36,8 @@ func startElection(rf *Raft) {
 	rf.votesReceived = 1
 	rf.requestVotesResponsesReceived = 0
 
+	rf.persist()
+
 	go requestVotesFromPeers(rf, rf.currentTerm)
 }
 
