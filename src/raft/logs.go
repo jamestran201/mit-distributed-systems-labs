@@ -19,7 +19,7 @@ type Logs struct {
 
 func makeLogs() *Logs {
 	logs := &Logs{
-		entries:      map[int]*LogEntry{},
+		entries:      map[int]*LogEntry{0: {Term: 0}},
 		lastLogIndex: 0,
 		lastLogTerm:  0,
 	}
@@ -41,52 +41,6 @@ func (l *Logs) startingFrom(index int) []*LogEntry {
 	return entries
 }
 
-func (l *Logs) reconcile(index int, entries []*LogEntry) {
-	// debugLogForRequest(rf, traceId, fmt.Sprintf("Starting at %d", index))
-	i := 0
-	startIndex := index
-	for ; startIndex <= l.lastLogIndex; startIndex++ {
-		if i >= len(entries) {
-			break
-		}
-
-		log := l.entries[startIndex]
-		if log.Term != entries[i].Term {
-			// debugLogForRequest(rf, traceId, "BREAKING")
-			break
-		}
-
-		i++
-	}
-
-	// no new logs to append
-	if i >= len(entries) {
-		return
-	}
-
-	// debugLogForRequest(rf, traceId, fmt.Sprintf("startIndex: %d, i: %d", startIndex, i))
-	// there could be conflicting logs, or a new log to append
-	l.overwriteLogs(startIndex, entries[i:])
-}
-
-func (l *Logs) overwriteLogs(index int, entries []*LogEntry) {
-	oldLastLogIndex := l.lastLogIndex
-	newLastLogIndex := index - 1
-	curIndex := index
-	for i := 0; i < len(entries); i++ {
-		l.entries[curIndex] = entries[i]
-		newLastLogIndex = curIndex
-		curIndex++
-	}
-
-	for i := newLastLogIndex + 1; i <= oldLastLogIndex; i++ {
-		delete(l.entries, i)
-	}
-
-	l.lastLogIndex = newLastLogIndex
-	l.lastLogTerm = l.entries[newLastLogIndex].Term
-}
-
 func (l *Logs) appendLog(command interface{}, term int) {
 	l.lastLogIndex++
 	l.lastLogTerm = term
@@ -97,7 +51,8 @@ func (l *Logs) appendLog(command interface{}, term int) {
 }
 
 func (l *Logs) firstIndexOfTerm(term int) int {
-	result := -1
+	// result := -1
+	result := 0
 	for index, entry := range l.entries {
 		if entry.Term == term {
 			result = index
@@ -106,4 +61,48 @@ func (l *Logs) firstIndexOfTerm(term int) int {
 	}
 
 	return result
+}
+
+func (l *Logs) findFirstConflictingLogIndex(startIndex int, newEntries []*LogEntry) (int, int, int) {
+	i := 0
+	firstConflictingIndex := -1
+	lastAgreeingIndex := startIndex - 1
+	firstNewLog := 0
+	for ; startIndex <= l.lastLogIndex; startIndex++ {
+		if i >= len(newEntries) {
+			break
+		}
+
+		if l.entries[startIndex].Term != newEntries[i].Term {
+			firstConflictingIndex = startIndex
+			break
+		}
+
+		lastAgreeingIndex = startIndex
+		firstNewLog = i + 1
+
+		i++
+	}
+
+	return firstConflictingIndex, lastAgreeingIndex, firstNewLog
+}
+
+func (l *Logs) deleteLogsFrom(index int) {
+	for i := index; i <= l.lastLogIndex; i++ {
+		delete(l.entries, i)
+	}
+
+	// We are deleting all logs starting from "index", so the last log index will be the log at "index - 1"
+	l.lastLogIndex = index - 1
+	l.lastLogTerm = l.entries[index-1].Term
+}
+
+func (l *Logs) appendNewEntries(startIndex int, firstNewLog int, newEntries []*LogEntry) {
+	for i := firstNewLog; i < len(newEntries); i++ {
+		l.entries[startIndex] = newEntries[i]
+		l.lastLogIndex = startIndex
+		l.lastLogTerm = newEntries[i].Term
+
+		startIndex++
+	}
 }
