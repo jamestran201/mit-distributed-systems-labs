@@ -30,74 +30,8 @@ type AppendEntriesReply struct {
 }
 
 func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Received AppendEntries from %d", args.LeaderId))
-
-	if args.Term < rf.currentTerm {
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Rejected AppendEntries from %d because of stale term. Given term: %d", args.LeaderId, args.Term))
-
-		reply.Term = rf.currentTerm
-		reply.Success = false
-		return
-	}
-
-	rf.receivedRpcFromPeer = true
-
-	if args.Term > rf.currentTerm || (args.Term == rf.currentTerm && rf.state == candidate) {
-		debugLogForRequest(rf, args.TraceId, "Received AppendEntries from server with higher term. Reset state to follower")
-		rf.resetToFollower(args.Term)
-	}
-
-	log := rf.logs.entryAt(args.PrevLogIndex)
-	if log == nil {
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("The current server does not have any logs at index %d", args.PrevLogIndex))
-
-		reply.Term = rf.currentTerm
-		reply.Success = false
-		reply.FirstConflictingIndex = rf.logs.lastLogIndex + 1
-		return
-	}
-
-	if log.Term != args.PrevLogTerm {
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("The logs from current server does not have the same term as leader %d. Current log term: %d. PrevLogTerm: %d", args.LeaderId, log.Term, args.PrevLogTerm))
-
-		reply.Term = rf.currentTerm
-		reply.Success = false
-		reply.FirstConflictingIndex = rf.logs.firstIndexOfTerm(log.Term)
-		return
-	}
-
-	debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Before reconciling logs: %v", rf.logs.entries))
-
-	firstConflictingIndex, lastAgreeingIndex, firstNewLog := rf.logs.findFirstConflictingLogIndex(args.PrevLogIndex+1, args.Entries)
-	if firstConflictingIndex > -1 {
-		rf.logs.deleteLogsFrom(firstConflictingIndex)
-
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Found conflicting index at %d. Deleted all logs after this index. Current logs: %v", firstConflictingIndex, rf.logs.entries))
-	}
-
-	rf.logs.appendNewEntries(lastAgreeingIndex+1, firstNewLog, args.Entries)
-
-	debugLogForRequest(rf, args.TraceId, fmt.Sprintf("After reconciling logs: %v", rf.logs.entries))
-
-	if args.LeaderCommit > rf.commitIndex {
-		prevCommitIndex := rf.commitIndex
-		if args.LeaderCommit > rf.logs.lastLogIndex {
-			rf.commitIndex = rf.logs.lastLogIndex
-		} else {
-			rf.commitIndex = args.LeaderCommit
-		}
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Commit index updated to %d. Logs: %v", rf.commitIndex, rf.logs.entries))
-
-		rf.notifyServiceOfCommittedLog(prevCommitIndex)
-	}
-
-	rf.persist()
-
-	reply.Term = rf.currentTerm
-	reply.Success = true
+	handler := &AppendEntriesHandler{rf, args, reply}
+	handler.Run()
 }
 
 func callAppendEntries(rf *Raft, server int, isHeartbeat bool, traceId string) {
