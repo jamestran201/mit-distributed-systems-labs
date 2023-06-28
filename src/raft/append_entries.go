@@ -94,6 +94,8 @@ func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntries
 		rf.notifyServiceOfCommittedLog(prevCommitIndex)
 	}
 
+	rf.persist()
+
 	reply.Term = rf.currentTerm
 	reply.Success = true
 }
