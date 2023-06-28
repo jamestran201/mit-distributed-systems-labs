@@ -63,11 +63,19 @@ func (l *Logs) firstIndexOfTerm(term int) int {
 	return result
 }
 
-func (l *Logs) findFirstConflictingLogIndex(startIndex int, newEntries []*LogEntry) (int, int, int) {
+// This function finds 3 things:
+// - The first index in the current logs that conflicts with the new entries
+// - The last index in the current logs that agrees with the new entries
+// - The position of the first new entry that is not in the current logs
+//
+// This function will be called when handling AppendEntries RPCs.
+// At this point, we can be sure that the current server has an entry at PrevLogIndex that matches PrevLogTerm.
+// Therefore, startIndex will be PrevLogIndex + 1. This is also why lastAgreeingIndex is initialized to startIndex - 1 (i.e. PrevLogIndex).
+func (l *Logs) findIndicesForReconciliation(startIndex int, newEntries []*LogEntry) (int, int, int) {
 	i := 0
+	firstNewLogPos := 0
 	firstConflictingIndex := -1
 	lastAgreeingIndex := startIndex - 1
-	firstNewLog := 0
 	for ; startIndex <= l.lastLogIndex; startIndex++ {
 		if i >= len(newEntries) {
 			break
@@ -79,12 +87,12 @@ func (l *Logs) findFirstConflictingLogIndex(startIndex int, newEntries []*LogEnt
 		}
 
 		lastAgreeingIndex = startIndex
-		firstNewLog = i + 1
+		firstNewLogPos = i + 1
 
 		i++
 	}
 
-	return firstConflictingIndex, lastAgreeingIndex, firstNewLog
+	return firstConflictingIndex, lastAgreeingIndex, firstNewLogPos
 }
 
 func (l *Logs) deleteLogsFrom(index int) {
@@ -97,12 +105,17 @@ func (l *Logs) deleteLogsFrom(index int) {
 	l.lastLogTerm = l.entries[index-1].Term
 }
 
-func (l *Logs) appendNewEntries(startIndex int, firstNewLog int, newEntries []*LogEntry) {
+func (l *Logs) appendNewEntries(startIndex int, firstNewLog int, newEntries []*LogEntry) bool {
+	appended := false
 	for i := firstNewLog; i < len(newEntries); i++ {
 		l.entries[startIndex] = newEntries[i]
 		l.lastLogIndex = startIndex
 		l.lastLogTerm = newEntries[i].Term
 
+		appended = true
+
 		startIndex++
 	}
+
+	return appended
 }

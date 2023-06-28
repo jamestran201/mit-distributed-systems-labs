@@ -75,16 +75,25 @@ func (h *AppendEntriesHandler) doesLogAtPrevLogIndexMatch() bool {
 func (h *AppendEntriesHandler) reconcileLogs() {
 	debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Before reconciling logs: %v", h.rf.logs.entries))
 
-	firstConflictingIndex, lastAgreeingIndex, firstNewLog := h.rf.logs.findFirstConflictingLogIndex(h.args.PrevLogIndex+1, h.args.Entries)
-	if firstConflictingIndex > -1 {
-		h.rf.logs.deleteLogsFrom(firstConflictingIndex)
+	firstConflictingIndex, lastAgreeingIndex, firstNewLogPos := h.rf.logs.findIndicesForReconciliation(h.args.PrevLogIndex+1, h.args.Entries)
 
-		debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Found conflicting index at %d. Deleted all logs after this index. Current logs: %v", firstConflictingIndex, h.rf.logs.entries))
+	if firstConflictingIndex == 0 {
+		debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Found conflicting index at 0. This is not right! Current logs: %v", h.rf.logs.entries))
+
+		panic("")
 	}
 
-	h.rf.logs.appendNewEntries(lastAgreeingIndex+1, firstNewLog, h.args.Entries)
+	if firstConflictingIndex > 0 {
+		h.rf.logs.deleteLogsFrom(firstConflictingIndex)
+		h.rf.persist()
 
-	h.rf.persist()
+		debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Found conflicting index at %d. Deleted all logs starting from this index. Current logs: %v", firstConflictingIndex, h.rf.logs.entries))
+	}
+
+	appended := h.rf.logs.appendNewEntries(lastAgreeingIndex+1, firstNewLogPos, h.args.Entries)
+	if appended {
+		h.rf.persist()
+	}
 
 	debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("After reconciling logs: %v", h.rf.logs.entries))
 }
