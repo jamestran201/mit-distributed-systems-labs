@@ -100,7 +100,12 @@ func prevLogIndexForServer(rf *Raft, server int) int {
 }
 
 func prevLogTermForServer(rf *Raft, server int) int {
-	return rf.logs.entryAt(prevLogIndexForServer(rf, server)).Term
+	entry := rf.logs.entryAt(prevLogIndexForServer(rf, server))
+	// if entry == nil {
+	// 	debugLog(rf, fmt.Sprintf("No log entry found for index %d\nLogs: %v\nNext Indices: %v\nMatch Indices: %v", prevLogIndexForServer(rf, server), rf.logs.entries, rf.nextIndex, rf.matchIndex))
+	// }
+
+	return entry.Term
 }
 
 func logEntriesToSend(rf *Raft, server int) []*LogEntry {

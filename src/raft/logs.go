@@ -51,16 +51,14 @@ func (l *Logs) appendLog(command interface{}, term int) {
 }
 
 func (l *Logs) firstIndexOfTerm(term int) int {
-	// result := -1
-	result := 0
+	smallestIndex := 0
 	for index, entry := range l.entries {
-		if entry.Term == term {
-			result = index
-			break
+		if entry.Term == term && (smallestIndex == 0 || index < smallestIndex) {
+			smallestIndex = index
 		}
 	}
 
-	return result
+	return smallestIndex
 }
 
 // This function finds 3 things:

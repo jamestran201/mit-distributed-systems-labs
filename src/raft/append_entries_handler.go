@@ -60,7 +60,7 @@ func (h *AppendEntriesHandler) doesLogAtPrevLogIndexMatch() bool {
 	}
 
 	if log.Term != h.args.PrevLogTerm {
-		debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("The logs from current server does not have the same term as leader %d. Current log term: %d. PrevLogTerm: %d", h.args.LeaderId, log.Term, h.args.PrevLogTerm))
+		// debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("The logs from current server does not have the same term as leader %d. Current log term: %d. PrevLogTerm: %d.\nLogs: %v", h.args.LeaderId, log.Term, h.args.PrevLogTerm, h.rf.logs.entries))
 
 		h.reply.Term = h.rf.currentTerm
 		h.reply.Success = false

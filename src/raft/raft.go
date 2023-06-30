@@ -124,6 +124,8 @@ func (rf *Raft) persist() {
 
 	raftstate := w.Bytes()
 	rf.persister.Save(raftstate, nil)
+
+	debugLog(rf, fmt.Sprintf("Persisted state. Current term: %d.\nVoted for: %d.\nLogs: %v\nLast log index: %d.\nLast log term: %d", rf.currentTerm, rf.votedFor, rf.logs.entries, rf.logs.lastLogIndex, rf.logs.lastLogTerm))
 }
 
 // restore previously persisted state.
