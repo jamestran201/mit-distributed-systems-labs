@@ -189,6 +189,8 @@ func handleRequestVoteResponse(rf *Raft, term int, server int, reply *RequestVot
 }
 
 func updateVotesReceived(rf *Raft, voteGranted bool, server int) {
+	rf.requestVotesResponsesReceived++
+
 	if voteGranted {
 		rf.votesReceived++
 		debugLog(rf, fmt.Sprintf("Received vote from %d", server))
