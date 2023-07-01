@@ -8,6 +8,7 @@ type RequestVoteArgs struct {
 	CandidateId  int
 	LastLogIndex int
 	LastLogTerm  int
+	TraceId      string
 }
 
 type RequestVoteReply struct {
@@ -18,61 +19,8 @@ type RequestVoteReply struct {
 }
 
 func handleRequestVotes(rf *Raft, args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	debugLog(rf, fmt.Sprintf("Received RequestVote from %d", args.CandidateId))
-
-	if args.Term < rf.currentTerm {
-		debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d because of stale term", args.CandidateId))
-
-		reply.Term = rf.currentTerm
-		reply.VoteGranted = false
-		return
-	} else if args.Term > rf.currentTerm {
-		debugLog(rf, "Received RequestVote from server with higher term. Reset state to follower")
-		rf.resetToFollower(args.Term)
-	}
-
-	if rf.votedFor == args.CandidateId {
-		reply.Term = rf.currentTerm
-		reply.VoteGranted = true
-
-		debugLog(rf, fmt.Sprintf("Already voted for %d", args.CandidateId))
-		return
-	}
-
-	if rf.votedFor == -1 && candidateAtLeastUpToDate(rf, args) {
-		rf.receivedRpcFromPeer = true
-		rf.votedFor = args.CandidateId
-
-		rf.persist()
-
-		reply.Term = rf.currentTerm
-		reply.VoteGranted = true
-
-		debugLog(rf, fmt.Sprintf("Voted for %d", args.CandidateId))
-		return
-	}
-
-	reply.Term = rf.currentTerm
-	reply.VoteGranted = false
-
-	if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
-		debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d because it already voted for %d", args.CandidateId, rf.votedFor))
-	} else if !candidateAtLeastUpToDate(rf, args) {
-		debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d because it's log is not at least up to date", args.CandidateId))
-	} else {
-		debugLog(rf, fmt.Sprintf("Rejected RequestVote from %d for unknown reason", args.CandidateId))
-	}
-}
-
-func candidateAtLeastUpToDate(rf *Raft, args *RequestVoteArgs) bool {
-	if args.LastLogTerm == rf.logs.lastLogTerm {
-		return args.LastLogIndex >= rf.logs.lastLogIndex
-	} else {
-		return args.LastLogTerm > rf.logs.lastLogTerm
-	}
+	handler := &RequestVotesHandler{rf, args, reply}
+	handler.Run()
 }
 
 func requestVotesFromPeers(rf *Raft, term int) {
@@ -116,6 +64,7 @@ func requestVotesFromServer(rf *Raft, term int, server int) {
 		args.CandidateId = rf.me
 		args.LastLogIndex = rf.logs.lastLogIndex
 		args.LastLogTerm = rf.logs.lastLogTerm
+		args.TraceId = generateUniqueString()
 	})
 
 	if shouldExit {

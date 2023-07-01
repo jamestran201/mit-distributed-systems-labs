@@ -1,8 +1,6 @@
 package raft
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 )
 
@@ -49,12 +47,6 @@ func callAppendEntries(rf *Raft, server int, isHeartbeat bool, traceId string) {
 			return
 		}
 
-		// TODO: Re-consider this
-		if !isHeartbeat && rf.logs.lastLogIndex < rf.nextIndex[server] {
-			shouldExit = true
-			debugLog(rf, fmt.Sprintf("Exiting callAppendEntries routine because logs for %d is up to date", server))
-		}
-
 		args = makeAppendEntriesRequest(rf, server, traceId)
 	})
 
@@ -84,15 +76,6 @@ func makeAppendEntriesRequest(rf *Raft, server int, traceId string) *AppendEntri
 		LeaderCommit: rf.commitIndex,
 		TraceId:      traceId,
 	}
-}
-
-func generateUniqueString() string {
-	b := make([]byte, 16)
-	_, err := rand.Read(b)
-	if err != nil {
-		panic(err)
-	}
-	return base64.URLEncoding.EncodeToString(b)
 }
 
 func prevLogIndexForServer(rf *Raft, server int) int {
