@@ -73,7 +73,9 @@ func requestVotesFromServer(rf *Raft, term int, server int) {
 
 	reply := &RequestVoteReply{}
 	sendRequestVote(rf, server, args, reply)
-	handleRequestVoteResponse(rf, term, server, reply)
+
+	handler := &RequestVotesResponseHandler{rf, args, reply, term, server}
+	handler.Run()
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -108,46 +110,4 @@ func sendRequestVote(rf *Raft, server int, args *RequestVoteArgs, reply *Request
 
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	reply.RequestCompleted = ok
-}
-
-func handleRequestVoteResponse(rf *Raft, term int, server int, reply *RequestVoteReply) {
-	// debugLog(rf, fmt.Sprintf("Waiting for RequestVote response. Current term: %d, Votes: %d, Responses received: %d", rf.currentTerm, votes, responsesReceived))
-
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	if rf.state != candidate || rf.currentTerm != term {
-		debugLog(rf, "State is outdated, exiting requestVotes routine")
-		return
-	}
-
-	debugLog(rf, fmt.Sprintf("Received RequestVote response from %d", server))
-
-	if !reply.RequestCompleted {
-		debugLog(rf, "A RequestVote request could not be processed successfully, skipping")
-		return
-	}
-
-	if reply.Term > rf.currentTerm {
-		debugLog(rf, "Received RequestVote response from server with higher term. Reset state to follower")
-		rf.resetToFollower(reply.Term)
-		return
-	}
-
-	updateVotesReceived(rf, reply.VoteGranted, server)
-}
-
-func updateVotesReceived(rf *Raft, voteGranted bool, server int) {
-	rf.requestVotesResponsesReceived++
-
-	if voteGranted {
-		rf.votesReceived++
-		debugLog(rf, fmt.Sprintf("Received vote from %d", server))
-	}
-
-	if rf.votesReceived > rf.majorityCount() {
-		onLeaderElection(rf)
-	} else if rf.requestVotesResponsesReceived >= len(rf.peers)-1 {
-		debugLog(rf, fmt.Sprintf("Candidate did not receive enough votes to become leader. Current term: %d", rf.currentTerm))
-	}
 }
