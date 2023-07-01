@@ -2,6 +2,11 @@ package raft
 
 import "fmt"
 
+func handleRequestVotes(rf *Raft, args *RequestVoteArgs, reply *RequestVoteReply) {
+	handler := &RequestVotesHandler{rf, args, reply}
+	handler.Run()
+}
+
 type RequestVotesHandler struct {
 	rf    *Raft
 	args  *RequestVoteArgs
