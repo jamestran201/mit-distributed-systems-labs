@@ -51,9 +51,9 @@ func (l *Logs) appendLog(command interface{}, term int) {
 }
 
 func (l *Logs) firstIndexOfTerm(term int) int {
-	smallestIndex := 0
+	smallestIndex := -1
 	for index, entry := range l.entries {
-		if entry.Term == term && (smallestIndex == 0 || index < smallestIndex) {
+		if entry.Term == term && (smallestIndex == -1 || index < smallestIndex) {
 			smallestIndex = index
 		}
 	}
@@ -93,7 +93,11 @@ func (l *Logs) findIndicesForReconciliation(startIndex int, newEntries []*LogEnt
 	return firstConflictingIndex, lastAgreeingIndex, firstNewLogPos
 }
 
-func (l *Logs) deleteLogsFrom(index int) {
+func (l *Logs) deleteLogsFrom(index int) bool {
+	if index < 0 || index > l.lastLogIndex {
+		return false
+	}
+
 	for i := index; i <= l.lastLogIndex; i++ {
 		delete(l.entries, i)
 	}
@@ -101,6 +105,8 @@ func (l *Logs) deleteLogsFrom(index int) {
 	// We are deleting all logs starting from "index", so the last log index will be the log at "index - 1"
 	l.lastLogIndex = index - 1
 	l.lastLogTerm = l.entries[index-1].Term
+
+	return true
 }
 
 func (l *Logs) appendNewEntries(startIndex int, firstNewLog int, newEntries []*LogEntry) bool {

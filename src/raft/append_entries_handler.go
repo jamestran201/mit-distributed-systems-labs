@@ -89,10 +89,14 @@ func (h *AppendEntriesHandler) reconcileLogs() {
 	}
 
 	if firstConflictingIndex > 0 {
-		h.rf.logs.deleteLogsFrom(firstConflictingIndex)
-		h.rf.persist()
+		res := h.rf.logs.deleteLogsFrom(firstConflictingIndex)
+		if !res {
+			debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Unable to delete logs. Index might be out of bounds. Index: %d. Logs: %v", firstConflictingIndex, h.rf.logs.entries))
+		} else {
+			h.rf.persist()
 
-		debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Found conflicting index at %d. Deleted all logs starting from this index. Current logs: %v", firstConflictingIndex, h.rf.logs.entries))
+			debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Found conflicting index at %d. Deleted all logs starting from this index. Current logs: %v", firstConflictingIndex, h.rf.logs.entries))
+		}
 	}
 
 	appended := h.rf.logs.appendNewEntries(lastAgreeingIndex+1, firstNewLogPos, h.args.Entries)
