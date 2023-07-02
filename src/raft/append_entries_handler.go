@@ -2,6 +2,11 @@ package raft
 
 import "fmt"
 
+func handleAppendEntries(rf *Raft, args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	handler := &AppendEntriesHandler{rf, args, reply}
+	handler.Run()
+}
+
 type AppendEntriesHandler struct {
 	rf    *Raft
 	args  *AppendEntriesArgs
