@@ -161,8 +161,12 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	debugLog(rf, "Taking snapshot")
+
 	rf.logs.takeSnapshot(index, snapshot)
 	rf.persist()
+
+	debugLog(rf, fmt.Sprintf("Took snapshot. Snapshot: %+v", snapshot))
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -285,7 +289,7 @@ func (rf *Raft) majorityCount() int {
 }
 
 func (rf *Raft) notifyServiceOfCommittedLog(prevCommitIndex int) {
-	for i := prevCommitIndex; i <= rf.commitIndex; i++ {
+	for i := prevCommitIndex + 1; i <= rf.commitIndex; i++ {
 		if i < 1 {
 			continue
 		}
