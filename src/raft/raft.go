@@ -64,6 +64,7 @@ type PersistentState struct {
 	LastLogIndex int
 	LastLogTerm  int
 	VotedFor     int
+	Snapshot     *Snapshot
 }
 
 // A Go object implementing a single Raft peer.
@@ -119,13 +120,14 @@ func (rf *Raft) persist() {
 		LastLogIndex: rf.logs.lastLogIndex,
 		LastLogTerm:  rf.logs.lastLogTerm,
 		VotedFor:     rf.votedFor,
+		Snapshot:     rf.logs.snapshot,
 	}
 	e.Encode(ps)
 
 	raftstate := w.Bytes()
 	rf.persister.Save(raftstate, nil)
 
-	debugLog(rf, fmt.Sprintf("Persisted state. Current term: %d.\nVoted for: %d.\nLogs: %v\nLast log index: %d.\nLast log term: %d", rf.currentTerm, rf.votedFor, rf.logs.entries, rf.logs.lastLogIndex, rf.logs.lastLogTerm))
+	debugLog(rf, fmt.Sprintf("Persisted state. Current term: %d.\nVoted for: %d.\nLogs: %v\nLast log index: %d.\nLast log term: %d\nSnapshot: %+v", rf.currentTerm, rf.votedFor, rf.logs.entries, rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.logs.snapshot))
 }
 
 // restore previously persisted state.
@@ -141,12 +143,13 @@ func (rf *Raft) readPersist(data []byte) {
 		panic(err)
 	} else {
 		rf.currentTerm = ps.CurrentTerm
+		rf.votedFor = ps.VotedFor
 		rf.logs.entries = ps.LogEntries
 		rf.logs.lastLogIndex = ps.LastLogIndex
 		rf.logs.lastLogTerm = ps.LastLogTerm
-		rf.votedFor = ps.VotedFor
+		rf.logs.snapshot = ps.Snapshot
 
-		debugLog(rf, fmt.Sprintf("Restored persistent state. Current term: %d. Voted for: %d. Last log index: %d. Last log term: %d", rf.currentTerm, rf.votedFor, rf.logs.lastLogIndex, rf.logs.lastLogTerm))
+		debugLog(rf, fmt.Sprintf("Restored persistent state. Current term: %d. Voted for: %d. Last log index: %d. Last log term: %d\nSnapshot: %+v", rf.currentTerm, rf.votedFor, rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.logs.snapshot))
 	}
 }
 
@@ -155,8 +158,11 @@ func (rf *Raft) readPersist(data []byte) {
 // service no longer needs the log through (and including)
 // that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (2D).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
+	rf.logs.takeSnapshot(index, snapshot)
+	rf.persist()
 }
 
 // the service using Raft (e.g. a k/v server) wants to start

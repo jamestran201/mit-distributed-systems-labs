@@ -260,3 +260,117 @@ func TestAppendNewEntries(t *testing.T) {
 		}
 	})
 }
+
+func TestTakeSnapshot(t *testing.T) {
+	t.Run("When there is no snapshot yet", func(t *testing.T) {
+		l := &Logs{
+			entries:      map[int]*LogEntry{0: {Term: 0}, 1: {Term: 1}, 2: {Term: 1}, 3: {Term: 2}, 4: {Term: 3}, 5: {Term: 3}},
+			lastLogIndex: 5,
+			lastLogTerm:  3,
+		}
+		data := []byte("some dummy data")
+		snapIndex := 4
+
+		l.takeSnapshot(snapIndex, data)
+
+		expectedSnapshot := &Snapshot{
+			LastLogIndex: snapIndex,
+			LastLogTerm:  3,
+			Data:         data,
+		}
+
+		if !reflect.DeepEqual(l.snapshot, expectedSnapshot) {
+			t.Errorf("Expected snapshot to be %+v, got %+v", expectedSnapshot, l.snapshot)
+		}
+
+		for i := 0; i <= snapIndex; i++ {
+			if _, ok := l.entries[i]; ok {
+				t.Errorf("Expected log entry %v to be deleted", i)
+			}
+		}
+
+		if l.lastLogIndex != 5 {
+			t.Errorf("Expected lastLogIndex to be %v, got %v", 5, l.lastLogIndex)
+		}
+
+		if l.lastLogTerm != 3 {
+			t.Errorf("Expected lastLogTerm to be %v, got %v", 3, l.lastLogTerm)
+		}
+	})
+
+	t.Run("When there is already another snapshot", func(t *testing.T) {
+		snapshot := &Snapshot{
+			LastLogIndex: 2,
+			LastLogTerm:  1,
+			Data:         []byte("haikyuu"),
+		}
+		l := &Logs{
+			entries:      map[int]*LogEntry{3: {Term: 2}, 4: {Term: 3}, 5: {Term: 3}},
+			lastLogIndex: 5,
+			lastLogTerm:  3,
+			snapshot:     snapshot,
+		}
+		data := []byte("some dummy data")
+		snapIndex := 4
+
+		l.takeSnapshot(snapIndex, data)
+
+		expectedSnapshot := &Snapshot{
+			LastLogIndex: snapIndex,
+			LastLogTerm:  3,
+			Data:         data,
+		}
+
+		if !reflect.DeepEqual(l.snapshot, expectedSnapshot) {
+			t.Errorf("Expected snapshot to be %+v, got %+v", expectedSnapshot, l.snapshot)
+		}
+
+		for i := 0; i <= snapIndex; i++ {
+			if _, ok := l.entries[i]; ok {
+				t.Errorf("Expected log entry %v to be deleted", i)
+			}
+		}
+
+		if l.lastLogIndex != 5 {
+			t.Errorf("Expected lastLogIndex to be %v, got %v", 5, l.lastLogIndex)
+		}
+
+		if l.lastLogTerm != 3 {
+			t.Errorf("Expected lastLogTerm to be %v, got %v", 3, l.lastLogTerm)
+		}
+	})
+
+	t.Run("When all logs are deleted after taking the snapshot", func(t *testing.T) {
+		l := &Logs{
+			entries:      map[int]*LogEntry{3: {Term: 2}, 4: {Term: 3}, 5: {Term: 3}},
+			lastLogIndex: 5,
+			lastLogTerm:  3,
+		}
+		data := []byte("some dummy data")
+		snapIndex := 5
+
+		l.takeSnapshot(snapIndex, data)
+
+		expectedSnapshot := &Snapshot{
+			LastLogIndex: snapIndex,
+			LastLogTerm:  3,
+			Data:         data,
+		}
+
+		if !reflect.DeepEqual(l.snapshot, expectedSnapshot) {
+			t.Errorf("Expected snapshot to be %+v, got %+v", expectedSnapshot, l.snapshot)
+		}
+
+		if len(l.entries) != 0 {
+			t.Errorf("Expected logs to be empty, got %+v", l.entries)
+		}
+
+		if l.lastLogIndex != 5 {
+			t.Errorf("Expected lastLogIndex to be %v, got %v", 5, l.lastLogIndex)
+		}
+
+		if l.lastLogTerm != 3 {
+			t.Errorf("Expected lastLogTerm to be %v, got %v", 3, l.lastLogTerm)
+		}
+	})
+}

@@ -2,6 +2,12 @@ package raft
 
 import "fmt"
 
+type Snapshot struct {
+	LastLogIndex int
+	LastLogTerm  int
+	Data         []byte
+}
+
 type LogEntry struct {
 	Command interface{}
 	Term    int
@@ -15,6 +21,7 @@ type Logs struct {
 	entries      map[int]*LogEntry
 	lastLogIndex int
 	lastLogTerm  int
+	snapshot     *Snapshot
 }
 
 func makeLogs() *Logs {
@@ -122,4 +129,20 @@ func (l *Logs) appendNewEntries(startIndex int, firstNewLog int, newEntries []*L
 	}
 
 	return appended
+}
+
+func (l *Logs) takeSnapshot(index int, data []byte) {
+	snapshot := &Snapshot{
+		LastLogIndex: index,
+		LastLogTerm:  l.entries[index].Term,
+		Data:         data,
+	}
+
+	l.snapshot = snapshot
+
+	for k := range l.entries {
+		if k <= index {
+			delete(l.entries, k)
+		}
+	}
 }
