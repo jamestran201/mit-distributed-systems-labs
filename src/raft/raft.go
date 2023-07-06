@@ -89,7 +89,7 @@ type Raft struct {
 
 	// Volatile state on all servers
 	commitIndex int
-	lastApplied int
+	lastApplied int // TODO: Need to update this around when commitIndex is updated. Confirm paper's details
 
 	// Leader only, volatile state
 	matchIndex []int
@@ -161,9 +161,15 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	debugLog(rf, "Taking snapshot")
+	debugLog(rf, fmt.Sprintf("Taking snapshot with index %d", index))
 
-	rf.logs.takeSnapshot(index, snapshot)
+	// TODO: Is this approach correct? This follows what the paper says, but not sure if it matches the tester and later labs
+	snapIndex := index
+	if snapIndex > rf.commitIndex {
+		snapIndex = rf.commitIndex
+		debugLog(rf, fmt.Sprintf("Reduced index %d to %d before snapshotting", index, snapIndex))
+	}
+	rf.logs.takeSnapshot(snapIndex, snapshot)
 	rf.persist()
 
 	debugLog(rf, fmt.Sprintf("Took snapshot. Snapshot: %+v", snapshot))
