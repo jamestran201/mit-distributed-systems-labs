@@ -54,17 +54,38 @@ func (h *AppendEntriesHandler) shouldResetToFollower() bool {
 
 func (h *AppendEntriesHandler) doesLogAtPrevLogIndexMatch() bool {
 	log := h.rf.logs.entryAt(h.args.PrevLogIndex)
+
 	if log == nil {
-		debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("The current server does not have any logs at index %d", h.args.PrevLogIndex))
+		if h.rf.logs.snapshot != nil {
+			if h.args.PrevLogIndex != h.rf.logs.snapshot.LastLogIndex {
+				debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("The current server snapshot lastLogIndex is %d, not %d", h.rf.logs.snapshot.LastLogIndex, h.args.PrevLogIndex))
 
-		h.reply.Term = h.rf.currentTerm
-		h.reply.Success = false
-		h.reply.FirstConflictingIndex = h.rf.logs.lastLogIndex + 1
+				h.reply.Term = h.rf.currentTerm
+				h.reply.Success = false
+				h.reply.FirstConflictingIndex = h.rf.logs.snapshot.LastLogIndex
 
-		return false
+				return false
+			} else if h.args.PrevLogTerm != h.rf.logs.snapshot.LastLogTerm {
+				debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("The current server snapshot lastLogTerm is %d, not %d", h.rf.logs.snapshot.LastLogTerm, h.args.PrevLogTerm))
+
+				h.reply.Term = h.rf.currentTerm
+				h.reply.Success = false
+				h.reply.FirstConflictingIndex = h.rf.logs.snapshot.LastLogIndex
+
+				return false
+			}
+		} else {
+			debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("The current server does not have any logs at index %d", h.args.PrevLogIndex))
+
+			h.reply.Term = h.rf.currentTerm
+			h.reply.Success = false
+			h.reply.FirstConflictingIndex = h.rf.logs.lastLogIndex + 1
+
+			return false
+		}
 	}
 
-	if log.Term != h.args.PrevLogTerm {
+	if log != nil && log.Term != h.args.PrevLogTerm {
 		// debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("The logs from current server does not have the same term as leader %d. Current log term: %d. PrevLogTerm: %d.\nLogs: %v", h.args.LeaderId, log.Term, h.args.PrevLogTerm, h.rf.logs.entries))
 
 		h.reply.Term = h.rf.currentTerm

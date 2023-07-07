@@ -106,11 +106,21 @@ func (c *AppendEntriesClient) handleAppendEntriesResponse() int {
 }
 
 func (c *AppendEntriesClient) prevLogIndexForServer() int {
-	return c.rf.nextIndex[c.server] - 1
+	index := c.rf.nextIndex[c.server] - 1
+	if index < c.rf.logs.minIndex() {
+		index = c.rf.logs.snapshot.LastLogIndex
+	}
+
+	return index
 }
 
 func (c *AppendEntriesClient) prevLogTermForServer() int {
-	entry := c.rf.logs.entryAt(c.prevLogIndexForServer())
+	index := c.prevLogIndexForServer()
+	if c.rf.logs.snapshot != nil && index == c.rf.logs.snapshot.LastLogIndex {
+		return c.rf.logs.snapshot.LastLogTerm
+	}
+
+	entry := c.rf.logs.entryAt(index)
 	// if entry == nil {
 	// 	debugLog(rf, fmt.Sprintf("No log entry found for index %d\nLogs: %v\nNext Indices: %v\nMatch Indices: %v", prevLogIndexForServer(rf, server), rf.logs.entries, rf.nextIndex, rf.matchIndex))
 	// }

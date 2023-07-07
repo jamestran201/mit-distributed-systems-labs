@@ -146,3 +146,14 @@ func (l *Logs) takeSnapshot(index int, data []byte) {
 		}
 	}
 }
+
+func (l *Logs) minIndex() int {
+	res := l.lastLogIndex
+	for k := range l.entries {
+		if k < res {
+			res = k
+		}
+	}
+
+	return res
+}
