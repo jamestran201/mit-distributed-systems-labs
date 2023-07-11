@@ -1111,6 +1111,8 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 	leader1 := cfg.checkOneLeader()
 
 	for i := 0; i < iters; i++ {
+		fmt.Println("Iteration", i)
+
 		victim := (leader1 + 1) % servers
 		sender := leader1
 		if i%3 == 1 {
@@ -1129,12 +1131,16 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 
 		// perhaps send enough to get a snapshot
 		nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
+		fmt.Println("Tester will send", nn+1, "messages")
 		for i := 0; i < nn; i++ {
 			cfg.rafts[sender].Start(rand.Int())
 		}
+		fmt.Println("Tester done sending messages")
 
 		// let applier threads catch up with the Start()'s
 		if disconnect == false && crash == false {
+			fmt.Println("Tester waiting for consensus")
+
 			// make sure all followers have caught up, so that
 			// an InstallSnapshot RPC isn't required for
 			// TestSnapshotBasic2D().

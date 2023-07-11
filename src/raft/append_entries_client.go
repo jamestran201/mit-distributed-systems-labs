@@ -80,12 +80,18 @@ func (c *AppendEntriesClient) handleAppendEntriesResponse() int {
 	}
 
 	if c.reply.Success {
-		if c.args.PrevLogIndex < c.prevLogIndexForServer() {
+		// TODO: Not sure if the condition below is correct
+		potentialNextIndex := c.args.PrevLogIndex + len(c.args.Entries) + 1
+		if potentialNextIndex <= c.rf.nextIndex[c.server] {
 			debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("Received a stale AppendEntries response from server %d. Skip processing response.", c.server))
 			return terminate
 		}
+		// if c.args.PrevLogIndex < c.prevLogIndexForServer() {
+		// 	debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("Received a stale AppendEntries response from server %d. Skip processing response.", c.server))
+		// 	return terminate
+		// }
 
-		c.rf.nextIndex[c.server] += len(c.args.Entries)
+		c.rf.nextIndex[c.server] = potentialNextIndex
 		c.rf.matchIndex[c.server] = c.rf.nextIndex[c.server] - 1
 
 		debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("AppendEntries was successful for %d. NextIndex: %d. MatchIndex: %d", c.server, c.rf.nextIndex[c.server], c.rf.matchIndex[c.server]))
@@ -94,6 +100,13 @@ func (c *AppendEntriesClient) handleAppendEntriesResponse() int {
 
 		return success
 	} else {
+		// TODO: Try moving this check here to skip processing stale responses for both success and failure cases
+		// Not sure if this is the right move yet.
+		if c.args.PrevLogIndex < c.prevLogIndexForServer() {
+			debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("Received a stale AppendEntries response from server %d. Skip processing response.", c.server))
+			return terminate
+		}
+
 		debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("AppendEntries was unsuccessful for server %d", c.server))
 
 		c.rf.nextIndex[c.server] = c.reply.FirstConflictingIndex

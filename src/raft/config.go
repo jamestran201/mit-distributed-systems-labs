@@ -164,12 +164,21 @@ func (cfg *config) checkLogs(i int, m ApplyMsg) (string, bool) {
 // contents
 func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
 	for m := range applyCh {
+		fmt.Printf("Reading ApplyMsg for server %d\n\n", i)
+
 		if m.CommandValid == false {
+			fmt.Printf("Tester skipped ApplyMsg\n\n")
 			// ignore other types of ApplyMsg
 		} else {
+			fmt.Printf("Tester waiting to acquire lock\n\n")
 			cfg.mu.Lock()
+
+			fmt.Printf("Tester acquired lock\n\n")
 			err_msg, prevok := cfg.checkLogs(i, m)
+
 			cfg.mu.Unlock()
+			fmt.Printf("Tester released lock\n\n")
+
 			if m.CommandIndex > 1 && prevok == false {
 				err_msg = fmt.Sprintf("server %v apply out of order %v. Logs: %v", i, m.CommandIndex, cfg.logs[i])
 			}
@@ -180,6 +189,8 @@ func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
 				// holding locks...
 			}
 		}
+
+		fmt.Printf("Done processing ApplyMsg for command %d of server %d\n\n", m.CommandIndex, i)
 	}
 }
 
@@ -224,27 +235,47 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 	for m := range applyCh {
 		err_msg := ""
 		if m.SnapshotValid {
+			fmt.Printf("[applierSnap] Reading ApplyMsg for snapshot of server %d\n\n", i)
+
+			fmt.Printf("[applierSnap] Test acquiring lock\n\n")
 			cfg.mu.Lock()
+
+			fmt.Printf("[applierSnap] Tester ingesting snap for server %d at index %d\n\n", i, m.SnapshotIndex)
 			err_msg = cfg.ingestSnap(i, m.Snapshot, m.SnapshotIndex)
+
 			cfg.mu.Unlock()
+			fmt.Printf("[applierSnap] Tester releasing lock\n\n")
 		} else if m.CommandValid {
+			fmt.Printf("[applierSnap] Reading ApplyMsg for committed index %d of server %d\n\n", m.CommandIndex, i)
+
 			if m.CommandIndex != cfg.lastApplied[i]+1 {
 				err_msg = fmt.Sprintf("server %v apply out of order, expected index %v, got %v", i, cfg.lastApplied[i]+1, m.CommandIndex)
 			}
 
 			if err_msg == "" {
+				fmt.Printf("[applierSnap] Test acquiring lock\n\n")
 				cfg.mu.Lock()
+
+				fmt.Printf("[applierSnap] Tester checking logs\n\n")
 				var prevok bool
 				err_msg, prevok = cfg.checkLogs(i, m)
+
 				cfg.mu.Unlock()
+				fmt.Printf("[applierSnap] Tester releasing lock\n\n")
+
 				if m.CommandIndex > 1 && prevok == false {
 					err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
 				}
 			}
 
+			fmt.Printf("[applierSnap] Test acquiring lock\n\n")
 			cfg.mu.Lock()
+
+			fmt.Printf("[applierSnap] Tester updating lastApplied for server %d\n\n", i)
 			cfg.lastApplied[i] = m.CommandIndex
+
 			cfg.mu.Unlock()
+			fmt.Printf("[applierSnap] Tester releasing lock\n\n")
 
 			if (m.CommandIndex+1)%SnapShotInterval == 0 {
 				w := new(bytes.Buffer)
@@ -255,9 +286,12 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 					xlog = append(xlog, cfg.logs[i][j])
 				}
 				e.Encode(xlog)
+
+				fmt.Printf("[applierSnap] Tester requests snapshot to be taken for server %d\n\n", i)
 				rf.Snapshot(m.CommandIndex, w.Bytes())
 			}
 		} else {
+			fmt.Printf("[applierSnap] Ignores ApplyMsg\n\n")
 			// Ignore other types of ApplyMsg.
 		}
 		if err_msg != "" {
