@@ -69,7 +69,7 @@ func (h *RequestVotesHandler) grantVote() {
 	h.rf.receivedRpcFromPeer = true
 	h.rf.votedFor = h.args.CandidateId
 
-	h.rf.persist()
+	h.rf.persist(nil)
 
 	h.reply.Term = h.rf.currentTerm
 	h.reply.VoteGranted = true

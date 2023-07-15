@@ -114,7 +114,7 @@ func (h *AppendEntriesHandler) reconcileLogs() {
 		if !res {
 			debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Unable to delete logs. Index might be out of bounds. Index: %d. Logs: %v", firstConflictingIndex, h.rf.logs.entries))
 		} else {
-			h.rf.persist()
+			h.rf.persist(nil)
 
 			debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Found conflicting index at %d. Deleted all logs starting from this index. Current logs: %v", firstConflictingIndex, h.rf.logs.entries))
 		}
@@ -122,7 +122,7 @@ func (h *AppendEntriesHandler) reconcileLogs() {
 
 	appended := h.rf.logs.appendNewEntries(lastAgreeingIndex+1, firstNewLogPos, h.args.Entries)
 	if appended {
-		h.rf.persist()
+		h.rf.persist(nil)
 	}
 
 	debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("After reconciling logs: %v", h.rf.logs.entries))
@@ -136,7 +136,7 @@ func (h *AppendEntriesHandler) updateCommitIndex() {
 		h.rf.commitIndex = h.args.LeaderCommit
 	}
 
-	h.rf.persist()
+	h.rf.persist(nil)
 
 	debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Commit index updated to %d. Logs: %v", h.rf.commitIndex, h.rf.logs.entries))
 

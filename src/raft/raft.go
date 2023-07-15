@@ -111,23 +111,27 @@ func (rf *Raft) GetState() (int, bool) {
 // second argument to persister.Save().
 // after you've implemented snapshots, pass the current snapshot
 // (or nil if there's not yet a snapshot).
-func (rf *Raft) persist() {
+func (rf *Raft) persist(snapshot *Snapshot) {
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
+
+	if snapshot == nil {
+		snapshot = rf.logs.snapshot
+	}
 	ps := PersistentState{
 		CurrentTerm:  rf.currentTerm,
 		LogEntries:   rf.logs.entries,
 		LastLogIndex: rf.logs.lastLogIndex,
 		LastLogTerm:  rf.logs.lastLogTerm,
 		VotedFor:     rf.votedFor,
-		Snapshot:     rf.logs.snapshot,
+		Snapshot:     snapshot,
 	}
 	e.Encode(ps)
 
 	raftstate := w.Bytes()
 	rf.persister.Save(raftstate, nil)
 
-	debugLog(rf, fmt.Sprintf("Persisted state. Current term: %d.\nVoted for: %d.\nLogs: %v\nLast log index: %d.\nLast log term: %d\nSnapshot: %+v", rf.currentTerm, rf.votedFor, rf.logs.entries, rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.logs.snapshot))
+	debugLog(rf, fmt.Sprintf("Persisted state. Current term: %d.\nVoted for: %d.\nLogs: %v\nLast log index: %d.\nLast log term: %d\nSnapshot: %+v", rf.currentTerm, rf.votedFor, rf.logs.entries, rf.logs.lastLogIndex, rf.logs.lastLogTerm, snapshot))
 }
 
 // restore previously persisted state.
@@ -158,21 +162,18 @@ func (rf *Raft) readPersist(data []byte) {
 // service no longer needs the log through (and including)
 // that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	acquiredLock := rf.mu.TryLock()
 
 	debugLog(rf, fmt.Sprintf("Taking snapshot with index %d", index))
 
-	// TODO: Is this approach correct? This follows what the paper says, but not sure if it matches the tester and later labs
-	snapIndex := index
-	if snapIndex > rf.commitIndex {
-		snapIndex = rf.commitIndex
-		debugLog(rf, fmt.Sprintf("Reduced index %d to %d before snapshotting", index, snapIndex))
-	}
-	rf.logs.takeSnapshot(snapIndex, snapshot)
-	rf.persist()
+	rf.logs.takeSnapshot(index, snapshot)
+	rf.persist(rf.logs.snapshot)
 
 	debugLog(rf, fmt.Sprintf("Took snapshot. Snapshot: %+v", snapshot))
+
+	if acquiredLock {
+		rf.mu.Unlock()
+	}
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -196,7 +197,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 
 	rf.logs.appendLog(command, rf.currentTerm)
-	rf.persist()
+	rf.persist(nil)
 
 	debugLog(rf, fmt.Sprintf("Received command from client. Last log index: %d. Last log term: %d", rf.logs.lastLogIndex, rf.logs.lastLogTerm))
 
@@ -256,7 +257,7 @@ func (rf *Raft) resetToFollower(term int) {
 	rf.votesReceived = 0
 	rf.requestVotesResponsesReceived = 0
 
-	rf.persist()
+	rf.persist(nil)
 }
 
 func (rf *Raft) updateCommitIndexIfPossible(logIndex int) {
@@ -300,13 +301,19 @@ func (rf *Raft) notifyServiceOfCommittedLog(prevCommitIndex int) {
 			continue
 		}
 
+		debugLog(rf, fmt.Sprintf("Notifying service of committed log at index %d", i))
+
 		msg := ApplyMsg{
 			CommandValid: true,
 			Command:      rf.logs.entryAt(i).Command,
 			CommandIndex: i,
 		}
 
+		debugLog(rf, fmt.Sprintf("Sending apply message to applyCh: %+v", msg))
+
 		rf.applyCh <- msg
+
+		debugLog(rf, fmt.Sprintf("Sent apply message to applyCh: %+v", msg))
 	}
 }
 
