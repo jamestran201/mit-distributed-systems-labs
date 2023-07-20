@@ -250,6 +250,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	handleAppendEntries(rf, args, reply)
 }
 
+func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+	handleInstallSnapshot(rf, args, reply)
+}
+
 func (rf *Raft) resetToFollower(term int) {
 	rf.state = follower
 	rf.currentTerm = term

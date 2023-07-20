@@ -63,3 +63,76 @@ func (h *InstallSnapshotHandler) Run() {
 	}
 	h.rf.applyCh <- msg
 }
+
+type InstallSnapshotClient struct {
+	rf      *Raft
+	server  int
+	traceId string
+	args    *InstallSnapshotArgs
+	reply   *InstallSnapshotReply
+}
+
+func (c *InstallSnapshotClient) Run() {
+	shouldExit := false
+	withLock(&c.rf.mu, func() {
+		if c.rf.state != leader {
+			shouldExit = true
+
+			debugLog(c.rf, "Exiting InstallSnapshot#Run() routine because server is no longer the leader")
+			return
+		}
+
+		c.makeInstallSnapshotRequest()
+	})
+
+	if shouldExit {
+		return
+	}
+
+	c.sendInstallSnapshot()
+	c.handleInstallSnapshotResponse()
+}
+
+func (c *InstallSnapshotClient) makeInstallSnapshotRequest() {
+	if c.traceId == "" {
+		c.args.TraceId = generateUniqueString()
+	}
+
+	c.args = &InstallSnapshotArgs{
+		Term:              c.rf.currentTerm,
+		LeaderId:          c.rf.me,
+		LastIncludedIndex: c.rf.logs.snapshot.LastLogIndex,
+		LastIncludedTerm:  c.rf.logs.snapshot.LastLogTerm,
+		Data:              c.rf.logs.snapshot.Data,
+		TraceId:           c.args.TraceId,
+	}
+}
+
+func (c *InstallSnapshotClient) sendInstallSnapshot() {
+	debugLogForRequestPlain(c.rf, c.args.TraceId, fmt.Sprintf("Making InstallSnapshot request to %d. Term %d. LastIncludedIndex %d. LastIncludedTerm %d.", c.server, c.args.Term, c.args.LastIncludedIndex, c.args.LastIncludedTerm))
+
+	ok := c.rf.peers[c.server].Call("Raft.InstallSnapshot", c.args, c.reply)
+	c.reply.RequestCompleted = ok
+}
+
+func (c *InstallSnapshotClient) handleInstallSnapshotResponse() {
+	c.rf.mu.Lock()
+	defer c.rf.mu.Unlock()
+
+	if c.rf.killed() {
+		debugLogForRequest(c.rf, c.args.TraceId, "Server is killed, skip handling InstallSnapshot response")
+	}
+
+	if c.rf.state != leader {
+		debugLogForRequest(c.rf, c.args.TraceId, "Server is no longer the leader, skip handling InstallSnapshot response")
+	}
+
+	if !c.reply.RequestCompleted {
+		debugLogForRequest(c.rf, c.args.TraceId, "An InstallSnapshot request could not be processed successfully")
+	}
+
+	if c.reply.Term > c.rf.currentTerm {
+		debugLogForRequest(c.rf, c.args.TraceId, "Received InstallSnapshot response from server with higher term. Reset state to follower")
+		c.rf.resetToFollower(c.reply.Term)
+	}
+}
