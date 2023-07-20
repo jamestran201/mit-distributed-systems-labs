@@ -45,6 +45,8 @@ func (h *InstallSnapshotHandler) Run() {
 		return
 	}
 
+	// TODO: What if args and snapshot have different terms?
+
 	newSnapshot := &Snapshot{
 		LastLogIndex: h.args.LastIncludedIndex,
 		LastLogTerm:  h.args.LastIncludedTerm,
@@ -52,4 +54,12 @@ func (h *InstallSnapshotHandler) Run() {
 	}
 	h.rf.logs.snapshot = newSnapshot
 	h.rf.logs.deleteLogsUntil(h.args.LastIncludedIndex)
+
+	msg := ApplyMsg{
+		CommandValid:  false,
+		Snapshot:      h.args.Data,
+		SnapshotTerm:  h.args.LastIncludedTerm,
+		SnapshotIndex: h.args.LastIncludedIndex,
+	}
+	h.rf.applyCh <- msg
 }

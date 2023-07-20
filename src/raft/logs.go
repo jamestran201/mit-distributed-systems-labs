@@ -118,9 +118,9 @@ func (l *Logs) deleteLogsFrom(index int) bool {
 
 func (l *Logs) deleteLogsUntil(index int) {
 	minIndex := l.minIndex()
-	for i := minIndex; i <= index; i++ {
-		if l.entries[i] == nil {
-			break
+	for i := index; i >= minIndex; i-- {
+		if i > l.lastLogIndex {
+			continue
 		}
 
 		delete(l.entries, i)
@@ -129,15 +129,17 @@ func (l *Logs) deleteLogsUntil(index int) {
 			continue
 		}
 
-		if l.entries[i+1] != nil {
-			l.lastLogIndex = i + 1
-			l.lastLogTerm = l.entries[i+1].Term
-		} else if l.entries[i-1] != nil {
-			l.lastLogIndex = i - 1
-			l.lastLogTerm = l.entries[i-1].Term
+		if i == minIndex {
+			if l.snapshot == nil {
+				l.lastLogIndex = 0
+				l.lastLogTerm = 0
+			} else {
+				l.lastLogIndex = l.snapshot.LastLogIndex
+				l.lastLogTerm = l.snapshot.LastLogTerm
+			}
 		} else {
-			l.lastLogIndex = l.snapshot.LastLogIndex
-			l.lastLogTerm = l.snapshot.LastLogTerm
+			l.lastLogIndex--
+			l.lastLogTerm = l.entries[l.lastLogIndex].Term
 		}
 	}
 }

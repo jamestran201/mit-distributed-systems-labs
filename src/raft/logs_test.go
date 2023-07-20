@@ -374,3 +374,75 @@ func TestTakeSnapshot(t *testing.T) {
 		}
 	})
 }
+
+func TestDeleteLogsUntil(t *testing.T) {
+	t.Run("Delete logs up till the given index", func(t *testing.T) {
+		l := &Logs{
+			entries:      map[int]*LogEntry{0: {Term: 0}, 1: {Term: 1}, 2: {Term: 1}, 3: {Term: 2}, 4: {Term: 3}, 5: {Term: 3}},
+			lastLogIndex: 5,
+			lastLogTerm:  3,
+		}
+
+		l.deleteLogsUntil(3)
+
+		expectedLogs := map[int]*LogEntry{4: {Term: 3}, 5: {Term: 3}}
+		if !reflect.DeepEqual(l.entries, expectedLogs) {
+			t.Errorf("Expected logs to be %v, got %v", expectedLogs, l.entries)
+		}
+
+		if l.lastLogIndex != 5 {
+			t.Errorf("Expected lastLogIndex to be %v, got %v", 5, l.lastLogIndex)
+		}
+
+		if l.lastLogTerm != 3 {
+			t.Errorf("Expected lastLogTerm to be %v, got %v", 3, l.lastLogTerm)
+		}
+	})
+
+	t.Run("Sets lastLogIndex and lastLogTerm to the snapshot's index and term when all logs are deleted", func(t *testing.T) {
+		l := &Logs{
+			entries:      map[int]*LogEntry{3: {Term: 2}, 4: {Term: 3}, 5: {Term: 3}},
+			lastLogIndex: 5,
+			lastLogTerm:  3,
+			snapshot:     &Snapshot{LastLogIndex: 2, LastLogTerm: 1},
+		}
+
+		l.deleteLogsUntil(5)
+
+		expectedLogs := map[int]*LogEntry{}
+		if !reflect.DeepEqual(l.entries, expectedLogs) {
+			t.Errorf("Expected logs to be %v, got %v", expectedLogs, l.entries)
+		}
+
+		if l.lastLogIndex != 2 {
+			t.Errorf("Expected lastLogIndex to be %v, got %v", 2, l.lastLogIndex)
+		}
+
+		if l.lastLogTerm != 1 {
+			t.Errorf("Expected lastLogTerm to be %v, got %v", 1, l.lastLogTerm)
+		}
+	})
+
+	t.Run("Sets lastLogIndex and lastLogTerm to 0 when there is no snapshot and all logs are deleted", func(t *testing.T) {
+		l := &Logs{
+			entries:      map[int]*LogEntry{0: {Term: 0}, 1: {Term: 1}, 2: {Term: 1}, 3: {Term: 2}, 4: {Term: 3}, 5: {Term: 3}},
+			lastLogIndex: 5,
+			lastLogTerm:  3,
+		}
+
+		l.deleteLogsUntil(5)
+
+		expectedLogs := map[int]*LogEntry{}
+		if !reflect.DeepEqual(l.entries, expectedLogs) {
+			t.Errorf("Expected logs to be %v, got %v", expectedLogs, l.entries)
+		}
+
+		if l.lastLogIndex != 0 {
+			t.Errorf("Expected lastLogIndex to be %v, got %v", 0, l.lastLogIndex)
+		}
+
+		if l.lastLogTerm != 0 {
+			t.Errorf("Expected lastLogTerm to be %v, got %v", 0, l.lastLogTerm)
+		}
+	})
+}
