@@ -116,6 +116,32 @@ func (l *Logs) deleteLogsFrom(index int) bool {
 	return true
 }
 
+func (l *Logs) deleteLogsUntil(index int) {
+	minIndex := l.minIndex()
+	for i := minIndex; i <= index; i++ {
+		if l.entries[i] == nil {
+			break
+		}
+
+		delete(l.entries, i)
+
+		if i < l.lastLogIndex {
+			continue
+		}
+
+		if l.entries[i+1] != nil {
+			l.lastLogIndex = i + 1
+			l.lastLogTerm = l.entries[i+1].Term
+		} else if l.entries[i-1] != nil {
+			l.lastLogIndex = i - 1
+			l.lastLogTerm = l.entries[i-1].Term
+		} else {
+			l.lastLogIndex = l.snapshot.LastLogIndex
+			l.lastLogTerm = l.snapshot.LastLogTerm
+		}
+	}
+}
+
 func (l *Logs) appendNewEntries(startIndex int, firstNewLog int, newEntries []*LogEntry) bool {
 	appended := false
 	for i := firstNewLog; i < len(newEntries); i++ {
