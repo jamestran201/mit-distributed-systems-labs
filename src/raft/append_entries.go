@@ -4,6 +4,7 @@ const (
 	success = iota
 	failure
 	terminate
+	trigger_install_snapshot
 )
 
 type AppendEntriesArgs struct {
@@ -32,5 +33,7 @@ func callAppendEntries(rf *Raft, server int, isHeartbeat bool, traceId string) {
 	result := client.Run()
 	if result == failure && !isHeartbeat {
 		go callAppendEntries(rf, server, isHeartbeat, traceId)
+	} else if result == trigger_install_snapshot {
+		go callInstallSnapshot(rf, server, traceId)
 	}
 }

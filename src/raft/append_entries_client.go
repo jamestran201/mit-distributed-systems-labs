@@ -41,7 +41,7 @@ func (c *AppendEntriesClient) makeAppendEntriesRequest() {
 		LeaderId:     c.rf.me,
 		PrevLogIndex: c.prevLogIndexForServer(),
 		PrevLogTerm:  c.prevLogTermForServer(),
-		Entries:      c.logEntriesToSend(),
+		Entries:      c.logEntriesToSend(c.prevLogIndexForServer() + 1),
 		LeaderCommit: c.rf.commitIndex,
 		TraceId:      c.traceId,
 	}
@@ -80,16 +80,11 @@ func (c *AppendEntriesClient) handleAppendEntriesResponse() int {
 	}
 
 	if c.reply.Success {
-		// TODO: Not sure if the condition below is correct
 		potentialNextIndex := c.args.PrevLogIndex + len(c.args.Entries) + 1
-		if potentialNextIndex <= c.rf.nextIndex[c.server] {
-			debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("Received a stale AppendEntries response from server %d. Skip processing response.", c.server))
+		if c.rf.nextIndex[c.server] > 1 && potentialNextIndex <= c.rf.nextIndex[c.server] {
+			debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("Received a successful but stale AppendEntries response from server %d. Skip processing response. Potential index: %d. NextIndex: %d", c.server, potentialNextIndex, c.rf.nextIndex[c.server]))
 			return terminate
 		}
-		// if c.args.PrevLogIndex < c.prevLogIndexForServer() {
-		// 	debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("Received a stale AppendEntries response from server %d. Skip processing response.", c.server))
-		// 	return terminate
-		// }
 
 		c.rf.nextIndex[c.server] = potentialNextIndex
 		c.rf.matchIndex[c.server] = c.rf.nextIndex[c.server] - 1
@@ -100,10 +95,8 @@ func (c *AppendEntriesClient) handleAppendEntriesResponse() int {
 
 		return success
 	} else {
-		// TODO: Try moving this check here to skip processing stale responses for both success and failure cases
-		// Not sure if this is the right move yet.
 		if c.args.PrevLogIndex < c.prevLogIndexForServer() {
-			debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("Received a stale AppendEntries response from server %d. Skip processing response.", c.server))
+			debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("Received a falied but stale AppendEntries response from server %d. Skip processing response.", c.server))
 			return terminate
 		}
 
@@ -113,6 +106,10 @@ func (c *AppendEntriesClient) handleAppendEntriesResponse() int {
 
 		debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("First conflicting index for server %d is %d", c.server, c.reply.FirstConflictingIndex))
 		debugLogForRequest(c.rf, c.args.TraceId, fmt.Sprintf("Leader logs: %v", c.rf.logs.entries))
+
+		if c.rf.logs.snapshot != nil && c.rf.logs.entryAt(c.rf.nextIndex[c.server]) == nil {
+			return trigger_install_snapshot
+		}
 
 		return failure
 	}
@@ -141,6 +138,10 @@ func (c *AppendEntriesClient) prevLogTermForServer() int {
 	return entry.Term
 }
 
-func (c *AppendEntriesClient) logEntriesToSend() []*LogEntry {
-	return c.rf.logs.startingFrom(c.rf.nextIndex[c.server])
+func (c *AppendEntriesClient) logEntriesToSend(startIndex int) []*LogEntry {
+	if startIndex == 0 {
+		return []*LogEntry{}
+	}
+
+	return c.rf.logs.startingFrom(startIndex)
 }

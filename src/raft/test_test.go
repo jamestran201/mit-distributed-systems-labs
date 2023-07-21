@@ -1107,9 +1107,13 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 
 	cfg.begin(name)
 
-	cfg.one(rand.Int(), servers, true)
+	randValue := rand.Int()
+	fmt.Println("Tester sent", randValue)
+	cfg.one(randValue, servers, true)
+
 	leader1 := cfg.checkOneLeader()
 
+	fmt.Println("Tester entering loop")
 	for i := 0; i < iters; i++ {
 		fmt.Println("Iteration", i)
 
@@ -1133,7 +1137,10 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
 		fmt.Println("Tester will send", nn+1, "messages")
 		for i := 0; i < nn; i++ {
-			cfg.rafts[sender].Start(rand.Int())
+			value := rand.Int()
+			cfg.rafts[sender].Start(value)
+
+			fmt.Println("Tester sent", value)
 		}
 		fmt.Println("Tester done sending messages")
 

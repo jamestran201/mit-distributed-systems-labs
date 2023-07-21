@@ -41,7 +41,7 @@ func (h *InstallSnapshotHandler) Run() {
 		return
 	}
 
-	if h.args.LastIncludedIndex <= h.rf.logs.snapshot.LastLogIndex {
+	if h.rf.logs.snapshot != nil && h.args.LastIncludedIndex <= h.rf.logs.snapshot.LastLogIndex {
 		return
 	}
 
@@ -53,7 +53,10 @@ func (h *InstallSnapshotHandler) Run() {
 		Data:         h.args.Data,
 	}
 	h.rf.logs.snapshot = newSnapshot
+	debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Updated snapshot. LastLogIndex: %d, LastLogTerm: %d", h.rf.logs.snapshot.LastLogIndex, h.rf.logs.snapshot.LastLogTerm))
+
 	h.rf.logs.deleteLogsUntil(h.args.LastIncludedIndex)
+	debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Deleted logs until index %d. Current logs: %v", h.args.LastIncludedIndex, h.rf.logs.entries))
 
 	msg := ApplyMsg{
 		CommandValid:  false,
@@ -62,6 +65,16 @@ func (h *InstallSnapshotHandler) Run() {
 		SnapshotIndex: h.args.LastIncludedIndex,
 	}
 	h.rf.applyCh <- msg
+	debugLogForRequest(h.rf, h.args.TraceId, fmt.Sprintf("Sent snapshot to applyCh. SnapshotTerm: %d, SnapshotIndex: %d", h.args.LastIncludedTerm, h.args.LastIncludedIndex))
+}
+
+func callInstallSnapshot(rf *Raft, server int, traceId string) {
+	if rf.killed() {
+		return
+	}
+
+	client := &InstallSnapshotClient{rf, server, traceId, &InstallSnapshotArgs{}, &InstallSnapshotReply{}}
+	client.Run()
 }
 
 type InstallSnapshotClient struct {
