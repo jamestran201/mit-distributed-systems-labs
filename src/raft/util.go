@@ -26,18 +26,34 @@ func withLock(mu *sync.Mutex, f func()) {
 }
 
 func debugLogPlain(rf *Raft, msg string) {
+	if !Debug {
+		return
+	}
+
 	fmt.Printf("Server %d - %s\n\n", rf.me, msg)
 }
 
 func debugLog(rf *Raft, msg string) {
+	if !Debug {
+		return
+	}
+
 	fmt.Printf("Server %d - %s - %s\n\n", rf.me, msg, additionalLogInfo(rf))
 }
 
 func debugLogForRequestPlain(rf *Raft, traceId string, msg string) {
+	if !Debug {
+		return
+	}
+
 	fmt.Printf("Server %d - TraceId: %s - %s\n\n", rf.me, traceId, msg)
 }
 
 func debugLogForRequest(rf *Raft, traceId string, msg string) {
+	if !Debug {
+		return
+	}
+
 	fmt.Printf("Server %d - TraceId: %s - %s - %s\n\n", rf.me, traceId, msg, additionalLogInfo(rf))
 }
 
