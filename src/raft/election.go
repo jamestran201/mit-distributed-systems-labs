@@ -8,7 +8,7 @@ import (
 
 func (rf *Raft) electionTimer() {
 	for !rf.killed() {
-		// pause for a random amount of time between 50 and 350
+		// pause for a random amount of time between 600 and 1600
 		// milliseconds.
 		ms := 600 + (rand.Int63() % 1000)
 		debugLogPlain(rf, fmt.Sprintf("Current election timeout is %d milliseconds", ms))
@@ -84,7 +84,7 @@ func (rf *Raft) onLeaderElection() {
 	rf.nextIndex = nextIndex
 	rf.matchIndex = make([]int, len(rf.peers))
 
-	// startHeartBeat(rf)
+	rf.startHeartBeat()
 
 	debugLog(rf, fmt.Sprintf("Promoted to leader. Current term: %d", rf.currentTerm))
 }

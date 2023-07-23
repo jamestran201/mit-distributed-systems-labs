@@ -32,7 +32,7 @@ func (rf *Raft) callRequestVotes(term, server int) {
 	reply := &RequestVoteReply{}
 	ok := rf.sendRequestVote(server, args, reply)
 	if !ok {
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("A RequestVote request to %d could not be processed successfully, skipping", server))
+		debugLogForRequestPlain(rf, args.TraceId, fmt.Sprintf("A RequestVote request to %d could not be processed successfully, skipping", server))
 		return
 	}
 

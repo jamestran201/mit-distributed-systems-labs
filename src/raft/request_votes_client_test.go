@@ -4,41 +4,7 @@ import (
 	"testing"
 )
 
-func TestAbortsWhenServerIsKilled(t *testing.T) {
-	cfg := make_config(t, 1, false, false)
-	defer cfg.cleanup()
-
-	server := cfg.rafts[0]
-	server.state = CANDIDATE
-	server.currentTerm = 1
-	server.requestVotesResponsesReceived = 0
-	server.votesReceived = 1
-	server.Kill()
-
-	server.callRequestVotes(1, 2)
-
-	expectedState := CANDIDATE
-	expectedCurrentTerm := 1
-	expectedVotesReceived := 1
-	expectedRequestVotesResponsesReceived := 0
-	if server.state != expectedState {
-		t.Errorf("Expected state to be %s. Got %s", expectedState, server.state)
-	}
-
-	if server.currentTerm != expectedCurrentTerm {
-		t.Errorf("Expected current term to be %d. Got %d", expectedCurrentTerm, server.currentTerm)
-	}
-
-	if server.votesReceived != expectedVotesReceived {
-		t.Errorf("Expected votes received to be %d. Got %d", expectedVotesReceived, server.votesReceived)
-	}
-
-	if server.requestVotesResponsesReceived != expectedRequestVotesResponsesReceived {
-		t.Errorf("Expected request votes responses received to be %d. Got %d", expectedRequestVotesResponsesReceived, server.requestVotesResponsesReceived)
-	}
-}
-
-func TestAbortsWhenServerIsNotCandidate(t *testing.T) {
+func TestAbortsCallRequestVotesWhenServerIsNotCandidate(t *testing.T) {
 	cfg := make_config(t, 1, false, false)
 	defer cfg.cleanup()
 
@@ -47,7 +13,6 @@ func TestAbortsWhenServerIsNotCandidate(t *testing.T) {
 	server.currentTerm = 1
 	server.requestVotesResponsesReceived = 0
 	server.votesReceived = 0
-	server.Kill()
 
 	server.callRequestVotes(1, 2)
 

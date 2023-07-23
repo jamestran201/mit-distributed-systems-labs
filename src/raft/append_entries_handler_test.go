@@ -73,3 +73,26 @@ func TestResetsToFollowerWhenHandlingAppendEntries(t *testing.T) {
 		t.Errorf("Expected state to be %s. Got %s", expectedState, server.state)
 	}
 }
+
+func TestSetsReceivedRpcFromPeerToTrueWhenAppendEntriesIsValid(t *testing.T) {
+	cfg := make_config(t, 1, false, false)
+	defer cfg.cleanup()
+
+	server := cfg.rafts[0]
+	server.currentTerm = 2
+	server.state = FOLLOWER
+	server.receivedRpcFromPeer = false
+
+	args := &AppendEntriesArgs{
+		Term:     2,
+		LeaderId: 1,
+	}
+	reply := &AppendEntriesReply{}
+
+	server.handleAppendEntries(args, reply)
+
+	expectedReceivedRpcFromPeer := true
+	if server.receivedRpcFromPeer != expectedReceivedRpcFromPeer {
+		t.Errorf("Expected received rpc from peer to be %v. Got %v", expectedReceivedRpcFromPeer, server.receivedRpcFromPeer)
+	}
+}
