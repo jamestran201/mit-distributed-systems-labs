@@ -21,6 +21,7 @@ func TestRejectsRequestVoteWithLesserTerm(t *testing.T) {
 
 	expectedTerm := 2
 	expectedVoteGranted := false
+	expectedReceivedRpcFromPeer := false
 	if reply.Term != expectedTerm {
 		t.Errorf("Expected term to be %d. Got %d", expectedTerm, reply.Term)
 	}
@@ -32,6 +33,10 @@ func TestRejectsRequestVoteWithLesserTerm(t *testing.T) {
 	if server.currentTerm != expectedTerm {
 		t.Errorf("Expected current term to be %d. Got %d", expectedTerm, server.currentTerm)
 	}
+
+	if server.receivedRpcFromPeer != expectedReceivedRpcFromPeer {
+		t.Errorf("Expected received rpc from peer to be %v. Got %v", expectedReceivedRpcFromPeer, server.receivedRpcFromPeer)
+	}
 }
 
 func TestConvertsToFollowerWhenGivenTermIsHigher(t *testing.T) {
@@ -42,6 +47,7 @@ func TestConvertsToFollowerWhenGivenTermIsHigher(t *testing.T) {
 	server.currentTerm = 2
 	server.state = CANDIDATE
 	server.votedFor = 3
+	server.receivedRpcFromPeer = true
 
 	args := &RequestVoteArgs{
 		Term:        4,
@@ -104,8 +110,9 @@ func TestGranVoteWhenHaveNotVotedInCurrentTerm(t *testing.T) {
 	defer cfg.cleanup()
 
 	server := cfg.rafts[0]
-	server.currentTerm = 1
-	server.votedFor = 0
+	server.currentTerm = 0
+	server.votedFor = -1
+	server.receivedRpcFromPeer = false
 
 	args := &RequestVoteArgs{
 		Term:        2,
@@ -118,6 +125,7 @@ func TestGranVoteWhenHaveNotVotedInCurrentTerm(t *testing.T) {
 	expectedTerm := 2
 	expectedVoteGranted := true
 	expectedVotedFor := 1
+	expectedReceivedRpcFromPeer := true
 	if reply.Term != expectedTerm {
 		t.Errorf("Expected term to be %d. Got %d", expectedTerm, reply.Term)
 	}
@@ -128,6 +136,10 @@ func TestGranVoteWhenHaveNotVotedInCurrentTerm(t *testing.T) {
 
 	if server.votedFor != expectedVotedFor {
 		t.Errorf("Expected voted for to be %d. Got %d", expectedVotedFor, server.votedFor)
+	}
+
+	if server.receivedRpcFromPeer != expectedReceivedRpcFromPeer {
+		t.Errorf("Expected received rpc from peer to be %v. Got %v", expectedReceivedRpcFromPeer, server.receivedRpcFromPeer)
 	}
 }
 

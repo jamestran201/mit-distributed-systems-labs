@@ -19,10 +19,9 @@ package raft
 
 import (
 	//	"bytes"
-	"math/rand"
+
 	"sync"
 	"sync/atomic"
-	"time"
 
 	//	"6.5840/labgob"
 	"6.5840/labrpc"
@@ -72,20 +71,24 @@ type Raft struct {
 	// Volatile states
 	// commitIndex int
 	// lastApplied int
+	lastLogIndex int
+	// lastLogTerm                   int
+	receivedRpcFromPeer           bool
+	votesReceived                 int
+	requestVotesResponsesReceived int
 
 	// Volatile states on leaders
-	// nextIndex  []int
-	// matchIndex []int
+	nextIndex  []int
+	matchIndex []int
 }
 
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
-	var term int
-	var isleader bool
-	// Your code here (2A).
-	return term, isleader
+	return rf.currentTerm, rf.state == LEADER
 }
 
 // save Raft's persistent state to stable storage,
@@ -180,17 +183,16 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
-func (rf *Raft) ticker() {
-	for rf.killed() == false {
+func (rf *Raft) resetToFollower(term int) {
+	rf.currentTerm = term
+	rf.requestVotesResponsesReceived = 0
+	rf.state = FOLLOWER
+	rf.votedFor = -1
+	rf.votesReceived = 0
+}
 
-		// Your code here (2A)
-		// Check if a leader election should be started.
-
-		// pause for a random amount of time between 50 and 350
-		// milliseconds.
-		ms := 50 + (rand.Int63() % 300)
-		time.Sleep(time.Duration(ms) * time.Millisecond)
-	}
+func (rf *Raft) majorityCount() int {
+	return len(rf.peers)/2 + 1
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -205,19 +207,23 @@ func (rf *Raft) ticker() {
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{
-		currentTerm: 0,
-		me:          me,
-		peers:       peers,
-		persister:   persister,
-		state:       FOLLOWER,
-		votedFor:    -1,
+		currentTerm:                   0,
+		me:                            me,
+		lastLogIndex:                  0,
+		peers:                         peers,
+		persister:                     persister,
+		receivedRpcFromPeer:           false,
+		requestVotesResponsesReceived: 0,
+		state:                         FOLLOWER,
+		votedFor:                      -1,
+		votesReceived:                 0,
 	}
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
 	// start ticker goroutine to start elections
-	go rf.ticker()
+	go rf.electionTimer()
 
 	return rf
 }

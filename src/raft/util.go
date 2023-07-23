@@ -46,7 +46,7 @@ func additionalLogInfo(rf *Raft) string {
 	// return fmt.Sprintf("Current term: %d, Voted for: %d, State: %s, Last log index: %d, Last log term: %d, Commit index: %d, Last applied: %d", rf.currentTerm, rf.votedFor, state, rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.commitIndex, rf.lastApplied)
 }
 
-func generateUniqueString() string {
+func generateTraceId() string {
 	b := make([]byte, 16)
 	_, err := rand.Read(b)
 	if err != nil {
