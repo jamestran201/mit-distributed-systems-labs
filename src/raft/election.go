@@ -10,7 +10,7 @@ func (rf *Raft) electionTimer() {
 	for !rf.killed() {
 		// pause for a random amount of time between 600 and 1600
 		// milliseconds.
-		ms := 600 + (rand.Int63() % 1000)
+		ms := 600 + (rand.Int63() % 300)
 		debugLogPlain(rf, fmt.Sprintf("Current election timeout is %d milliseconds", ms))
 
 		time.Sleep(time.Duration(ms) * time.Millisecond)
