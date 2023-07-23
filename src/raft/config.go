@@ -625,7 +625,7 @@ func (cfg *config) begin(description string) {
 // and some performance numbers.
 func (cfg *config) end() {
 	cfg.checkTimeout()
-	if cfg.t.Failed() == false {
+	if !cfg.t.Failed() {
 		cfg.mu.Lock()
 		t := time.Since(cfg.t0).Seconds()       // real time
 		npeers := cfg.n                         // number of Raft peers
@@ -634,8 +634,9 @@ func (cfg *config) end() {
 		ncmds := cfg.maxIndex - cfg.maxIndex0   // number of Raft agreements reported
 		cfg.mu.Unlock()
 
-		fmt.Printf("  ... Passed --")
-		fmt.Printf("  %4.1f  %d %4d %7d %4d\n", t, npeers, nrpc, nbytes, ncmds)
+		fmt.Printf("  ... Passed --\n")
+		fmt.Printf("%7s|%7s|%15s|%15s|%17s\n", "time", "servers", "total rpc calls", "total rpc bytes", "committed entries")
+		fmt.Printf("%7.1f %7d %15d %15d %17d\n", t, npeers, nrpc, nbytes, ncmds)
 	}
 }
 
