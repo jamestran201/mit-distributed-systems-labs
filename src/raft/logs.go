@@ -16,6 +16,19 @@ func (rf *Raft) appendLogEntry(command interface{}) int {
 	return rf.lastLogIndex
 }
 
+func (rf *Raft) hasLogWithIndexAndTerm(index, term int) (bool, string) {
+	if index < 0 || index > rf.lastLogIndex {
+		return false, "no_logs_at_index"
+	}
+
+	res := rf.logs[index].Term == term
+	if res {
+		return true, ""
+	} else {
+		return false, "terms_do_not_match"
+	}
+}
+
 func (rf *Raft) replicateLogs() {
 	for server := range rf.peers {
 		if server == rf.me {

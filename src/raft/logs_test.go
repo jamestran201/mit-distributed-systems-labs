@@ -82,3 +82,59 @@ func Test_appendLogEntry(t *testing.T) {
 		}
 	})
 }
+
+func Test_hasLogWithIndexAndTerm(t *testing.T) {
+	rf := &Raft{
+		currentTerm: 11,
+		logs: []LogEntry{
+			{Command: nil, Term: 0},
+			{Command: "foo", Term: 2},
+			{Command: "bar", Term: 2},
+			{Command: "baz", Term: 5},
+			{Command: "bee", Term: 7},
+		},
+		lastLogIndex: 4,
+		lastLogTerm:  7,
+	}
+
+	t.Run("Returns false when given index is greater than server lastLogIndex", func(t *testing.T) {
+		res, _ := rf.hasLogWithIndexAndTerm(5, 7)
+
+		if res {
+			t.Errorf("Expected result to be false. Got true")
+		}
+	})
+
+	t.Run("Returns false when given index is less than 0", func(t *testing.T) {
+		res, _ := rf.hasLogWithIndexAndTerm(-1, 7)
+
+		if res {
+			t.Errorf("Expected result to be false. Got true")
+		}
+	})
+
+	t.Run("Returns false when server has log at given index but term does not match", func(t *testing.T) {
+		res, _ := rf.hasLogWithIndexAndTerm(4, 13)
+
+		if res {
+			t.Errorf("Expected result to be false. Got true")
+		}
+	})
+
+	t.Run("Returns true when server has log at given index and term matches", func(t *testing.T) {
+		res, _ := rf.hasLogWithIndexAndTerm(4, 7)
+		if !res {
+			t.Errorf("Expected result to be true. Got false")
+		}
+
+		res, _ = rf.hasLogWithIndexAndTerm(2, 2)
+		if !res {
+			t.Errorf("Expected result to be true. Got false")
+		}
+
+		res, _ = rf.hasLogWithIndexAndTerm(0, 0)
+		if !res {
+			t.Errorf("Expected result to be true. Got false")
+		}
+	})
+}

@@ -58,8 +58,7 @@ func debugLogForRequest(rf *Raft, traceId string, msg string) {
 }
 
 func additionalLogInfo(rf *Raft) string {
-	return fmt.Sprintf("Current term: %d, Voted for: %d, State: %s", rf.currentTerm, rf.votedFor, rf.state)
-	// return fmt.Sprintf("Current term: %d, Voted for: %d, State: %s, Last log index: %d, Last log term: %d, Commit index: %d, Last applied: %d", rf.currentTerm, rf.votedFor, state, rf.logs.lastLogIndex, rf.logs.lastLogTerm, rf.commitIndex, rf.lastApplied)
+	return fmt.Sprintf("CurrentTerm: %d, VotedFor: %d, State: %s, LastLogIndex: %d, LastLogTerm: %d, CommitIndex: %d, LastApplied: %d", rf.currentTerm, rf.votedFor, rf.state, rf.lastLogIndex, rf.lastLogTerm, rf.commitIndex, rf.lastApplied)
 }
 
 func generateTraceId() string {
