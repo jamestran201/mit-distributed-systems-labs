@@ -54,6 +54,11 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
+type LogEntry struct {
+	Command interface{}
+	Term    int
+}
+
 // A Go object implementing a single Raft peer.
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
@@ -66,13 +71,13 @@ type Raft struct {
 	currentTerm int
 	state       string
 	votedFor    int
-	// logs []LogEntry
+	logs        []LogEntry
 
 	// Volatile states
-	// commitIndex int
-	// lastApplied int
-	lastLogIndex int
-	// lastLogTerm                   int
+	commitIndex                   int
+	lastApplied                   int
+	lastLogIndex                  int
+	lastLogTerm                   int
 	receivedRpcFromPeer           bool
 	votesReceived                 int
 	requestVotesResponsesReceived int
@@ -211,9 +216,13 @@ func (rf *Raft) majorityCount() int {
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{
+		commitIndex:                   0,
 		currentTerm:                   0,
 		me:                            me,
+		lastApplied:                   0,
 		lastLogIndex:                  0,
+		lastLogTerm:                   0,
+		logs:                          []LogEntry{{Command: nil, Term: 0}},
 		peers:                         peers,
 		persister:                     persister,
 		receivedRpcFromPeer:           false,

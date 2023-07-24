@@ -26,18 +26,30 @@ func (rf *Raft) handleRequestVotes(args *RequestVoteArgs, reply *RequestVoteRepl
 		rf.resetToFollower(args.Term)
 	}
 
-	if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Rejected RequestVotes from %d because already voted for %d", args.CandidateId, rf.votedFor))
+	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.isCandidateLogUpToDate(args) {
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Voted for %d", args.CandidateId))
+		rf.votedFor = args.CandidateId
+		rf.receivedRpcFromPeer = true
 
 		reply.Term = rf.currentTerm
-		reply.VoteGranted = false
+		reply.VoteGranted = true
 		return
 	}
 
-	debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Voted for %d", args.CandidateId))
-	rf.votedFor = args.CandidateId
-	rf.receivedRpcFromPeer = true
+	if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Rejected RequestVotes from %d because already voted for %d", args.CandidateId, rf.votedFor))
+	} else if !rf.isCandidateLogUpToDate(args) {
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Rejected RequestVotes from %d because candidate log is not up to date", args.CandidateId))
+	}
 
 	reply.Term = rf.currentTerm
-	reply.VoteGranted = true
+	reply.VoteGranted = false
+}
+
+func (rf *Raft) isCandidateLogUpToDate(args *RequestVoteArgs) bool {
+	if rf.lastLogTerm != args.LastLogTerm {
+		return args.LastLogTerm > rf.lastLogTerm
+	}
+
+	return args.LastLogIndex >= rf.lastLogIndex
 }

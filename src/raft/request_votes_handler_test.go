@@ -105,18 +105,58 @@ func TestRejectsRequestVoteWhenAlreadyVotedForAnotherCandidate(t *testing.T) {
 	}
 }
 
-func TestGranVoteWhenHaveNotVotedInCurrentTerm(t *testing.T) {
+func TestRejectsRequestVoteWhenCandidateIsNotUpToDate(t *testing.T) {
 	cfg := make_config(t, 1, false, false)
 	defer cfg.cleanup()
 
 	server := cfg.rafts[0]
-	server.currentTerm = 0
+	server.currentTerm = 1
+	server.lastLogIndex = 5
+	server.lastLogTerm = 1
+	server.votedFor = -1
+
+	args := &RequestVoteArgs{
+		Term:         2,
+		CandidateId:  1,
+		LastLogIndex: 4,
+		LastLogTerm:  1,
+	}
+	reply := &RequestVoteReply{}
+
+	server.handleRequestVotes(args, reply)
+
+	expectedTerm := 2
+	expectedVoteGranted := false
+	expectedVotedFor := -1
+	if reply.Term != expectedTerm {
+		t.Errorf("Expected term to be %d. Got %d", expectedTerm, reply.Term)
+	}
+
+	if reply.VoteGranted != expectedVoteGranted {
+		t.Errorf("Expected vote granted to be %v. Got %v", expectedVoteGranted, reply.VoteGranted)
+	}
+
+	if server.votedFor != expectedVotedFor {
+		t.Errorf("Expected voted for to be %d. Got %d", expectedVotedFor, server.votedFor)
+	}
+}
+
+func TestGrantVoteWhenHaveNotVotedInCurrentTermAndCandidateUpToDate(t *testing.T) {
+	cfg := make_config(t, 1, false, false)
+	defer cfg.cleanup()
+
+	server := cfg.rafts[0]
+	server.currentTerm = 1
+	server.lastLogIndex = 5
+	server.lastLogTerm = 1
 	server.votedFor = -1
 	server.receivedRpcFromPeer = false
 
 	args := &RequestVoteArgs{
-		Term:        2,
-		CandidateId: 1,
+		Term:         2,
+		CandidateId:  1,
+		LastLogIndex: 5,
+		LastLogTerm:  1,
 	}
 	reply := &RequestVoteReply{}
 
@@ -143,17 +183,21 @@ func TestGranVoteWhenHaveNotVotedInCurrentTerm(t *testing.T) {
 	}
 }
 
-func TestGranVoteWhenAlreadyVotedForSameCandidateInCurrentTerm(t *testing.T) {
+func TestGranVoteWhenAlreadyVotedForSameCandidateInCurrentTermAndCandidateUpToDate(t *testing.T) {
 	cfg := make_config(t, 1, false, false)
 	defer cfg.cleanup()
 
 	server := cfg.rafts[0]
 	server.currentTerm = 2
+	server.lastLogIndex = 5
+	server.lastLogTerm = 1
 	server.votedFor = 1
 
 	args := &RequestVoteArgs{
-		Term:        2,
-		CandidateId: 1,
+		Term:         2,
+		CandidateId:  1,
+		LastLogIndex: 5,
+		LastLogTerm:  1,
 	}
 	reply := &RequestVoteReply{}
 
@@ -173,4 +217,96 @@ func TestGranVoteWhenAlreadyVotedForSameCandidateInCurrentTerm(t *testing.T) {
 	if server.votedFor != expectedVotedFor {
 		t.Errorf("Expected voted for to be %d. Got %d", expectedVotedFor, server.votedFor)
 	}
+}
+
+func Test_isCandidateLogUpToDate(t *testing.T) {
+	t.Run("Returns true when candidate has higher term", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.lastLogTerm = 1
+		server.lastLogIndex = 5
+
+		args := &RequestVoteArgs{
+			LastLogTerm:  2,
+			LastLogIndex: 5,
+		}
+
+		if !server.isCandidateLogUpToDate(args) {
+			t.Errorf("Expected candidate log to be considered up-to-date")
+		}
+	})
+
+	t.Run("Returns true when candidate has same term but higher index", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.lastLogTerm = 1
+		server.lastLogIndex = 5
+
+		args := &RequestVoteArgs{
+			LastLogTerm:  1,
+			LastLogIndex: 6,
+		}
+
+		if !server.isCandidateLogUpToDate(args) {
+			t.Errorf("Expected candidate log to be considered up-to-date")
+		}
+	})
+
+	t.Run("Returns true when candidate has same term and index", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.lastLogTerm = 1
+		server.lastLogIndex = 5
+
+		args := &RequestVoteArgs{
+			LastLogTerm:  1,
+			LastLogIndex: 5,
+		}
+
+		if !server.isCandidateLogUpToDate(args) {
+			t.Errorf("Expected candidate log to be considered up-to-date")
+		}
+	})
+
+	t.Run("Returns false when candidate has lower term", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.lastLogTerm = 2
+		server.lastLogIndex = 5
+
+		args := &RequestVoteArgs{
+			LastLogTerm:  1,
+			LastLogIndex: 5,
+		}
+
+		if server.isCandidateLogUpToDate(args) {
+			t.Errorf("Expected candidate log to be considered not up-to-date")
+		}
+	})
+
+	t.Run("Returns false when candidate has same term but lower index", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.lastLogTerm = 1
+		server.lastLogIndex = 5
+
+		args := &RequestVoteArgs{
+			LastLogTerm:  1,
+			LastLogIndex: 4,
+		}
+
+		if server.isCandidateLogUpToDate(args) {
+			t.Errorf("Expected candidate log to be considered not up-to-date")
+		}
+	})
 }
