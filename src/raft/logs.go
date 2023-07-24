@@ -29,6 +29,32 @@ func (rf *Raft) hasLogWithIndexAndTerm(index, term int) (bool, string) {
 	}
 }
 
+func (rf *Raft) findFirstConflictIndex(args *AppendEntriesArgs) (int, int) {
+	conflictIndex := -1
+	firstNewIndex := -1
+	j := 0
+	newEntriesLen := len(args.Entries)
+	for i := args.PrevLogIndex + 1; i <= rf.lastLogIndex; i++ {
+		if j == newEntriesLen {
+			break
+		}
+
+		if rf.logs[i].Term != args.Entries[j].Term {
+			conflictIndex = i
+			firstNewIndex = j
+			break
+		}
+
+		j++
+	}
+
+	if conflictIndex == -1 && j < newEntriesLen {
+		firstNewIndex = j
+	}
+
+	return conflictIndex, firstNewIndex
+}
+
 func (rf *Raft) replicateLogs() {
 	for server := range rf.peers {
 		if server == rf.me {
