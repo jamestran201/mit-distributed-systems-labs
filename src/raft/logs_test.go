@@ -389,3 +389,114 @@ func Test_findFirstConflictIndex(t *testing.T) {
 		}
 	})
 }
+
+func Test_deleteAllLogsFrom(t *testing.T) {
+	t.Run("Deletes all logs starting at given index", func(t *testing.T) {
+		rf := &Raft{
+			currentTerm: 8,
+			logs: []LogEntry{
+				{Command: nil, Term: 0},
+				{Command: "foo", Term: 2},
+				{Command: "boo", Term: 3},
+				{Command: "loo", Term: 4},
+				{Command: "bar", Term: 5},
+				{Command: "baz", Term: 8},
+			},
+			lastLogIndex: 5,
+			lastLogTerm:  8,
+		}
+
+		err := rf.deleteAllLogsFrom(3)
+		if err != nil {
+			t.Errorf("Expected no error. Got %v", err)
+		}
+
+		expectedLogs := []LogEntry{
+			{Command: nil, Term: 0},
+			{Command: "foo", Term: 2},
+			{Command: "boo", Term: 3},
+		}
+		expectedLastLogIndex := 2
+		expectedLastLogTerm := 3
+		if !reflect.DeepEqual(rf.logs, expectedLogs) {
+			t.Errorf("Expected logs to be %+v. Got %+v", expectedLogs, rf.logs)
+		}
+
+		if rf.lastLogIndex != expectedLastLogIndex {
+			t.Errorf("Expected last log index to be %d. Got %d", expectedLastLogIndex, rf.lastLogIndex)
+		}
+
+		if rf.lastLogTerm != expectedLastLogTerm {
+			t.Errorf("Expected last log term to be %d. Got %d", expectedLastLogTerm, rf.lastLogTerm)
+		}
+	})
+
+	t.Run("Returns an error when given index is less than or equal to commitIndex", func(t *testing.T) {
+		rf := &Raft{
+			currentTerm: 8,
+			logs: []LogEntry{
+				{Command: nil, Term: 0},
+				{Command: "foo", Term: 2},
+				{Command: "boo", Term: 3},
+				{Command: "loo", Term: 4},
+				{Command: "bar", Term: 5},
+				{Command: "baz", Term: 8},
+			},
+			lastLogIndex: 5,
+			lastLogTerm:  8,
+			commitIndex:  3,
+		}
+
+		err := rf.deleteAllLogsFrom(3)
+		if err == nil {
+			t.Errorf("Expected an error. Got nil")
+		}
+	})
+}
+
+func Test_appendNewEntries(t *testing.T) {
+	t.Run("Appends new entries to log", func(t *testing.T) {
+		rf := &Raft{
+			currentTerm: 3,
+			logs: []LogEntry{
+				{Command: nil, Term: 0},
+				{Command: "foo", Term: 2},
+				{Command: "boo", Term: 3},
+			},
+			lastLogIndex: 2,
+			lastLogTerm:  3,
+		}
+		args := &AppendEntriesArgs{
+			Term: 8,
+			Entries: []LogEntry{
+				{Command: "loo", Term: 4},
+				{Command: "bar", Term: 5},
+				{Command: "baz", Term: 8},
+			},
+		}
+
+		rf.appendNewEntries(args, 0)
+
+		expectedLogs := []LogEntry{
+			{Command: nil, Term: 0},
+			{Command: "foo", Term: 2},
+			{Command: "boo", Term: 3},
+			{Command: "loo", Term: 4},
+			{Command: "bar", Term: 5},
+			{Command: "baz", Term: 8},
+		}
+		if !reflect.DeepEqual(rf.logs, expectedLogs) {
+			t.Errorf("Expected logs to be %+v. Got %+v", expectedLogs, rf.logs)
+		}
+
+		expectedLastLogIndex := 5
+		expectedLastLogTerm := 8
+		if rf.lastLogIndex != expectedLastLogIndex {
+			t.Errorf("Expected last log index to be %d. Got %d", expectedLastLogIndex, rf.lastLogIndex)
+		}
+
+		if rf.lastLogTerm != expectedLastLogTerm {
+			t.Errorf("Expected last log term to be %d. Got %d", expectedLastLogTerm, rf.lastLogTerm)
+		}
+	})
+}

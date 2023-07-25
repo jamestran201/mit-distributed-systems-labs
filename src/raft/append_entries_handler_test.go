@@ -1,6 +1,9 @@
 package raft
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestRejection(t *testing.T) {
 	t.Run("Rejects when given term is less than current term", func(t *testing.T) {
@@ -24,6 +27,64 @@ func TestRejection(t *testing.T) {
 			t.Errorf("Expected term to be %d. Got %d", expectedTerm, reply.Term)
 		}
 
+		if reply.Success != expectedSuccess {
+			t.Errorf("Expected success to be %v. Got %v", expectedSuccess, reply.Success)
+		}
+	})
+
+	t.Run("Rejects when server has no logs at prevLogIndex", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.currentTerm = 2
+		server.logs = []LogEntry{
+			{nil, 0},
+			{"foo", 2},
+		}
+		server.lastLogIndex = 1
+		server.lastLogTerm = 2
+
+		args := &AppendEntriesArgs{
+			Term:         2,
+			LeaderId:     1,
+			PrevLogIndex: 4,
+			PrevLogTerm:  2,
+		}
+		reply := &AppendEntriesReply{}
+
+		server.handleAppendEntries(args, reply)
+
+		expectedSuccess := false
+		if reply.Success != expectedSuccess {
+			t.Errorf("Expected success to be %v. Got %v", expectedSuccess, reply.Success)
+		}
+	})
+
+	t.Run("Rejects when terms do not match", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.currentTerm = 2
+		server.logs = []LogEntry{
+			{nil, 0},
+			{"foo", 2},
+		}
+		server.lastLogIndex = 1
+		server.lastLogTerm = 2
+
+		args := &AppendEntriesArgs{
+			Term:         2,
+			LeaderId:     1,
+			PrevLogIndex: 1,
+			PrevLogTerm:  8,
+		}
+		reply := &AppendEntriesReply{}
+
+		server.handleAppendEntries(args, reply)
+
+		expectedSuccess := false
 		if reply.Success != expectedSuccess {
 			t.Errorf("Expected success to be %v. Got %v", expectedSuccess, reply.Success)
 		}
@@ -94,5 +155,178 @@ func TestSetsReceivedRpcFromPeerToTrueWhenAppendEntriesIsValid(t *testing.T) {
 	expectedReceivedRpcFromPeer := true
 	if server.receivedRpcFromPeer != expectedReceivedRpcFromPeer {
 		t.Errorf("Expected received rpc from peer to be %v. Got %v", expectedReceivedRpcFromPeer, server.receivedRpcFromPeer)
+	}
+}
+
+func TestDoesNothingWhenCurrentLogsAreUpToDate(t *testing.T) {
+	cfg := make_config(t, 1, false, false)
+	defer cfg.cleanup()
+
+	server := cfg.rafts[0]
+	server.currentTerm = 1
+	server.state = FOLLOWER
+	server.receivedRpcFromPeer = false
+	server.logs = []LogEntry{
+		{nil, 0},
+		{"foo", 1},
+		{"bar", 1},
+	}
+	server.lastLogIndex = 2
+	server.lastLogTerm = 1
+
+	args := &AppendEntriesArgs{
+		Term:         2,
+		LeaderId:     1,
+		PrevLogIndex: 2,
+		PrevLogTerm:  1,
+		Entries:      []LogEntry{},
+		LeaderCommit: 0,
+	}
+	reply := &AppendEntriesReply{}
+
+	server.handleAppendEntries(args, reply)
+
+	expectedLogs := []LogEntry{
+		{nil, 0},
+		{"foo", 1},
+		{"bar", 1},
+	}
+	if !reflect.DeepEqual(server.logs, expectedLogs) {
+		t.Errorf("Expected logs to be %+v. Got %+v", expectedLogs, server.logs)
+	}
+
+	expectedLastLogIndex := 2
+	if server.lastLogIndex != expectedLastLogIndex {
+		t.Errorf("Expected last log index to be %d. Got %d", expectedLastLogIndex, server.lastLogIndex)
+	}
+
+	expectedLastLogTerm := 1
+	if server.lastLogTerm != expectedLastLogTerm {
+		t.Errorf("Expected last log term to be %d. Got %d", expectedLastLogTerm, server.lastLogTerm)
+	}
+
+	if reply.Success != true {
+		t.Errorf("Expected success to be true. Got %v", reply.Success)
+	}
+}
+
+func TestDeletesConflictingLogsAndAppendsNewLogs(t *testing.T) {
+	cfg := make_config(t, 1, false, false)
+	defer cfg.cleanup()
+
+	server := cfg.rafts[0]
+	server.currentTerm = 3
+	server.state = FOLLOWER
+	server.receivedRpcFromPeer = false
+	server.logs = []LogEntry{
+		{nil, 0},
+		{"foo", 1},
+		{"bar", 1},
+		{"qar", 2},
+		{"qoo", 3},
+		{"zoo", 3},
+	}
+	server.lastLogIndex = 5
+	server.lastLogTerm = 3
+
+	args := &AppendEntriesArgs{
+		Term:         4,
+		LeaderId:     1,
+		PrevLogIndex: 2,
+		PrevLogTerm:  1,
+		Entries: []LogEntry{
+			{"moo", 3},
+			{"shoo", 3},
+			{"loo", 4},
+			{"joo", 4},
+		},
+		LeaderCommit: 0,
+	}
+	reply := &AppendEntriesReply{}
+
+	server.handleAppendEntries(args, reply)
+
+	expectedLogs := []LogEntry{
+		{nil, 0},
+		{"foo", 1},
+		{"bar", 1},
+		{"moo", 3},
+		{"shoo", 3},
+		{"loo", 4},
+		{"joo", 4},
+	}
+	if !reflect.DeepEqual(server.logs, expectedLogs) {
+		t.Errorf("Expected logs to be %+v. Got %+v", expectedLogs, server.logs)
+	}
+
+	expectedLastLogIndex := 6
+	if server.lastLogIndex != expectedLastLogIndex {
+		t.Errorf("Expected last log index to be %d. Got %d", expectedLastLogIndex, server.lastLogIndex)
+	}
+
+	expectedLastLogTerm := 4
+	if server.lastLogTerm != expectedLastLogTerm {
+		t.Errorf("Expected last log term to be %d. Got %d", expectedLastLogTerm, server.lastLogTerm)
+	}
+
+	if reply.Success != true {
+		t.Errorf("Expected success to be true. Got %v", reply.Success)
+	}
+}
+
+func TestOnlyAppendNewLogs(t *testing.T) {
+	cfg := make_config(t, 1, false, false)
+	defer cfg.cleanup()
+
+	server := cfg.rafts[0]
+	server.currentTerm = 1
+	server.state = FOLLOWER
+	server.receivedRpcFromPeer = false
+	server.logs = []LogEntry{
+		{nil, 0},
+	}
+	server.lastLogIndex = 0
+	server.lastLogTerm = 0
+
+	args := &AppendEntriesArgs{
+		Term:         1,
+		LeaderId:     1,
+		PrevLogIndex: 0,
+		PrevLogTerm:  0,
+		Entries: []LogEntry{
+			{"moo", 1},
+			{"shoo", 1},
+			{"loo", 1},
+			{"joo", 1},
+		},
+		LeaderCommit: 0,
+	}
+	reply := &AppendEntriesReply{}
+
+	server.handleAppendEntries(args, reply)
+
+	expectedLogs := []LogEntry{
+		{nil, 0},
+		{"moo", 1},
+		{"shoo", 1},
+		{"loo", 1},
+		{"joo", 1},
+	}
+	if !reflect.DeepEqual(server.logs, expectedLogs) {
+		t.Errorf("Expected logs to be %+v. Got %+v", expectedLogs, server.logs)
+	}
+
+	expectedLastLogIndex := 4
+	if server.lastLogIndex != expectedLastLogIndex {
+		t.Errorf("Expected last log index to be %d. Got %d", expectedLastLogIndex, server.lastLogIndex)
+	}
+
+	expectedLastLogTerm := 1
+	if server.lastLogTerm != expectedLastLogTerm {
+		t.Errorf("Expected last log term to be %d. Got %d", expectedLastLogTerm, server.lastLogTerm)
+	}
+
+	if reply.Success != true {
+		t.Errorf("Expected success to be true. Got %v", reply.Success)
 	}
 }

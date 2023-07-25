@@ -1,13 +1,12 @@
 package raft
 
+import "errors"
+
 func (rf *Raft) appendLogEntry(command interface{}) int {
-	clonedLogs := make([]LogEntry, len(rf.logs)+1)
-	for i, entry := range rf.logs {
-		clonedLogs[i] = LogEntry{Command: entry.Command, Term: entry.Term}
-	}
+	clonedLogs := rf.cloneLogs(len(rf.logs))
 
 	newEntry := LogEntry{Command: command, Term: rf.currentTerm}
-	clonedLogs[len(clonedLogs)-1] = newEntry
+	clonedLogs = append(clonedLogs, newEntry)
 
 	rf.logs = clonedLogs
 	rf.lastLogIndex++
@@ -53,6 +52,41 @@ func (rf *Raft) findFirstConflictIndex(args *AppendEntriesArgs) (int, int) {
 	}
 
 	return conflictIndex, firstNewIndex
+}
+
+func (rf *Raft) deleteAllLogsFrom(index int) error {
+	if index <= rf.commitIndex {
+		return errors.New("cannot delete logs that have been committed")
+	}
+
+	clonedLogs := rf.cloneLogs(index)
+
+	rf.logs = clonedLogs
+	rf.lastLogIndex = index - 1
+	rf.lastLogTerm = rf.logs[index-1].Term
+
+	return nil
+}
+
+func (rf *Raft) appendNewEntries(args *AppendEntriesArgs, firstNewIndex int) {
+	clonedLogs := rf.cloneLogs(len(rf.logs))
+
+	for i := firstNewIndex; i < len(args.Entries); i++ {
+		clonedLogs = append(clonedLogs, LogEntry{Command: args.Entries[i].Command, Term: args.Entries[i].Term})
+	}
+
+	rf.logs = clonedLogs
+	rf.lastLogIndex = len(rf.logs) - 1
+	rf.lastLogTerm = rf.logs[rf.lastLogIndex].Term
+}
+
+func (rf *Raft) cloneLogs(newLogLength int) []LogEntry {
+	clonedLogs := make([]LogEntry, newLogLength)
+	for i := 0; i < newLogLength; i++ {
+		clonedLogs[i] = LogEntry{Command: rf.logs[i].Command, Term: rf.logs[i].Term}
+	}
+
+	return clonedLogs
 }
 
 func (rf *Raft) replicateLogs() {
