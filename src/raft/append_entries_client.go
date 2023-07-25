@@ -2,7 +2,7 @@ package raft
 
 import "fmt"
 
-func (rf *Raft) callAppendEntries(server int) {
+func (rf *Raft) callAppendEntries(server int, traceId string) {
 	var args *AppendEntriesArgs
 
 	shouldExit := false
@@ -19,7 +19,13 @@ func (rf *Raft) callAppendEntries(server int) {
 			return
 		}
 
-		args = rf.makeAppendEntriesArgs()
+		if rf.lastLogIndex < rf.nextIndex[server] {
+			debugLog(rf, "Follower logs are up to date, aborting callAppendEntries routine.")
+			shouldExit = true
+			return
+		}
+
+		args = rf.makeAppendEntriesArgs(server, traceId)
 	})
 
 	if shouldExit {
@@ -36,11 +42,27 @@ func (rf *Raft) callAppendEntries(server int) {
 	rf.handleAppendEntriesResponse(server, args, reply)
 }
 
-func (rf *Raft) makeAppendEntriesArgs() *AppendEntriesArgs {
+func (rf *Raft) makeAppendEntriesArgs(server int, traceId string) *AppendEntriesArgs {
+	prevLogIndex := rf.nextIndex[server] - 1
+
+	if prevLogIndex < 0 {
+		debugLog(rf, fmt.Sprintf("WARNING: prevLogIndex is %d, but should be >= 0. This is not right. Server: %d. NextIndex: %+v", prevLogIndex, server, rf.nextIndex))
+		panic(1)
+	}
+
+	prevLogTerm := rf.logs[prevLogIndex].Term
+
+	if traceId == "" {
+		traceId = generateTraceId()
+	}
+
 	args := &AppendEntriesArgs{
-		Term:     rf.currentTerm,
-		LeaderId: rf.me,
-		TraceId:  generateTraceId(),
+		Term:         rf.currentTerm,
+		LeaderId:     rf.me,
+		PrevLogIndex: prevLogIndex,
+		PrevLogTerm:  prevLogTerm,
+		LeaderCommit: rf.commitIndex,
+		TraceId:      traceId,
 	}
 
 	return args
@@ -69,5 +91,21 @@ func (rf *Raft) handleAppendEntriesResponse(server int, args *AppendEntriesArgs,
 
 		rf.resetToFollower(reply.Term)
 		return
+	}
+
+	if reply.Success {
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Received successful AppendEntries response from %d", server))
+
+		rf.nextIndex[server] = args.PrevLogIndex + len(args.Entries) + 1
+		rf.matchIndex[server] = rf.nextIndex[server] - 1
+
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Updated nextIndex to %d and matchIndex to %d", rf.nextIndex[server], rf.matchIndex[server]))
+
+		// TODO: implement committing logs
+	} else {
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Received failed AppendEntries response from %d", server))
+
+		rf.nextIndex[server]--
+		go rf.callAppendEntries(server, args.TraceId)
 	}
 }

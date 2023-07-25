@@ -95,6 +95,6 @@ func (rf *Raft) replicateLogs() {
 			continue
 		}
 
-		go rf.callAppendEntries(server)
+		go rf.callAppendEntries(server, "")
 	}
 }
