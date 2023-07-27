@@ -330,3 +330,79 @@ func TestOnlyAppendNewLogs(t *testing.T) {
 		t.Errorf("Expected success to be true. Got %v", reply.Success)
 	}
 }
+
+func TestUpdateCommitIndexWhenHandlingAppendEntries(t *testing.T) {
+	t.Run("Sets commit index to leader commit when leader commit is less than lastLogIndex", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.currentTerm = 1
+		server.state = FOLLOWER
+		server.receivedRpcFromPeer = false
+		server.logs = []LogEntry{
+			{nil, 0},
+		}
+		server.lastLogIndex = 0
+		server.lastLogTerm = 0
+		server.commitIndex = 0
+
+		args := &AppendEntriesArgs{
+			Term:         1,
+			LeaderId:     1,
+			PrevLogIndex: 0,
+			PrevLogTerm:  0,
+			Entries: []LogEntry{
+				{"moo", 1},
+				{"shoo", 1},
+				{"loo", 1},
+				{"joo", 1},
+			},
+			LeaderCommit: 2,
+		}
+		reply := &AppendEntriesReply{}
+
+		server.handleAppendEntries(args, reply)
+
+		expectedCommitIndex := 2
+		if server.commitIndex != expectedCommitIndex {
+			t.Errorf("Expected commit index to be %d. Got %d", expectedCommitIndex, server.commitIndex)
+		}
+	})
+
+	t.Run("Sets commit index to lastLogIndex when leaderCommit is higher than lastLogIndex", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.currentTerm = 1
+		server.state = FOLLOWER
+		server.receivedRpcFromPeer = false
+		server.logs = []LogEntry{
+			{nil, 0},
+			{"moo", 1},
+			{"shoo", 1},
+			{"loo", 1},
+		}
+		server.lastLogIndex = 3
+		server.lastLogTerm = 1
+		server.commitIndex = 0
+
+		args := &AppendEntriesArgs{
+			Term:         1,
+			LeaderId:     1,
+			PrevLogIndex: 3,
+			PrevLogTerm:  1,
+			Entries:      []LogEntry{},
+			LeaderCommit: 4,
+		}
+		reply := &AppendEntriesReply{}
+
+		server.handleAppendEntries(args, reply)
+
+		expectedCommitIndex := 3
+		if server.commitIndex != expectedCommitIndex {
+			t.Errorf("Expected commit index to be %d. Got %d", expectedCommitIndex, server.commitIndex)
+		}
+	})
+}

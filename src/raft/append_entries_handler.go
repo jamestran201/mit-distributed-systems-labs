@@ -47,7 +47,17 @@ func (rf *Raft) handleAppendEntries(args *AppendEntriesArgs, reply *AppendEntrie
 
 	rf.resolveConflictAndAppendNewLogs(args)
 
-	// TODO: implement committing logs
+	if args.LeaderCommit > rf.commitIndex {
+		newCommitIndex := args.LeaderCommit
+		if args.LeaderCommit > rf.lastLogIndex {
+			newCommitIndex = rf.lastLogIndex
+		}
+
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Updating commitIndex to %d", newCommitIndex))
+
+		rf.commitIndex = newCommitIndex
+		rf.applyCond.Signal()
+	}
 
 	reply.Term = rf.currentTerm
 	reply.Success = true
