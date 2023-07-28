@@ -20,6 +20,7 @@ package raft
 import (
 	//	"bytes"
 
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -174,6 +175,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 
 	index := rf.appendLogEntry(command)
+	debugLog(rf, fmt.Sprintf("Received command from client. Last log index: %d. Last log term: %d", rf.lastLogIndex, rf.lastLogTerm))
 
 	rf.replicateLogs()
 
@@ -248,6 +250,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// start ticker goroutine to start elections
 	go rf.electionTimer()
+
+	// start goroutine to apply logs
+	go rf.applyLogs()
 
 	return rf
 }

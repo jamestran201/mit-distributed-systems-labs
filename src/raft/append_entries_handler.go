@@ -53,9 +53,9 @@ func (rf *Raft) handleAppendEntries(args *AppendEntriesArgs, reply *AppendEntrie
 			newCommitIndex = rf.lastLogIndex
 		}
 
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Updating commitIndex to %d", newCommitIndex))
-
 		rf.commitIndex = newCommitIndex
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Updated commitIndex to %d. Logs: %+v", newCommitIndex, rf.logs))
+
 		rf.applyCond.Signal()
 	}
 
@@ -83,8 +83,11 @@ func (rf *Raft) resolveConflictAndAppendNewLogs(args *AppendEntriesArgs) {
 	}
 
 	if firstNewIndex != -1 {
-		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Appending new entries from index %d", firstNewIndex))
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Appending new entries from index %d in args.Entries", firstNewIndex))
+
 		rf.appendNewEntries(args, firstNewIndex)
+
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("New logs: %+v", rf.logs))
 	} else {
 		debugLogForRequest(rf, args.TraceId, "No new entries to append")
 	}

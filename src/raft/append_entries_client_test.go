@@ -97,14 +97,24 @@ func TestRaft_handleAppendEntriesResponse(t *testing.T) {
 	})
 
 	t.Run("Increments nextIndex and matchIndex when result is successful", func(t *testing.T) {
-		cfg := make_config(t, 1, false, false)
+		cfg := make_config(t, 3, false, false)
 		defer cfg.cleanup()
 
 		server := cfg.rafts[0]
 		server.state = LEADER
 		server.currentTerm = 2
-		server.nextIndex = []int{0, 3}
-		server.matchIndex = []int{0, 2}
+		server.nextIndex = []int{0, 3, 2}
+		server.matchIndex = []int{0, 2, 1}
+		server.logs = []LogEntry{
+			{nil, 0},
+			{"blah", 1},
+			{"grr", 1},
+			{"foo", 2},
+			{"bar", 2},
+			{"baz", 2},
+		}
+		server.lastLogIndex = 5
+		server.lastLogTerm = 2
 
 		args := &AppendEntriesArgs{
 			Term:         2,
@@ -132,6 +142,66 @@ func TestRaft_handleAppendEntriesResponse(t *testing.T) {
 		expectedMatchIndex := 5
 		if server.matchIndex[1] != expectedMatchIndex {
 			t.Errorf("Expected matchIndex to be %d. Got %d", expectedMatchIndex, server.matchIndex[1])
+		}
+	})
+}
+
+func Test_updateCommitIndexForLeader(t *testing.T) {
+	cfg := make_config(t, 5, false, false)
+	defer cfg.cleanup()
+
+	server := cfg.rafts[0]
+	server.state = LEADER
+	server.currentTerm = 5
+	server.commitIndex = 2
+	server.lastLogIndex = 7
+	server.lastLogTerm = 5
+	server.matchIndex = []int{0, 8, 1, 2, 7}
+	server.logs = []LogEntry{
+		{nil, 0},
+		{"foo", 1},
+		{"bar", 2},
+		{"baz", 2},
+		{"qux", 3},
+		{"quux", 4},
+		{"corge", 4},
+		{"grault", 5},
+		{"garply", 5},
+	}
+
+	t.Run("no-ops when index is not higher than commitIndex", func(t *testing.T) {
+		server.updateCommitIndexForLeader(1, "")
+
+		expectedCommitIndex := 2
+		if server.commitIndex != expectedCommitIndex {
+			t.Errorf("Expected commitIndex to be %d. Got %d", expectedCommitIndex, server.commitIndex)
+		}
+	})
+
+	t.Run("no-ops when log at index is not from the current term", func(t *testing.T) {
+		server.updateCommitIndexForLeader(5, "")
+
+		expectedCommitIndex := 2
+		if server.commitIndex != expectedCommitIndex {
+			t.Errorf("Expected commitIndex to be %d. Got %d", expectedCommitIndex, server.commitIndex)
+		}
+	})
+
+	t.Run("no-ops when log at index is not replicated by a majority of servers", func(t *testing.T) {
+		server.updateCommitIndexForLeader(8, "")
+
+		expectedCommitIndex := 2
+		if server.commitIndex != expectedCommitIndex {
+			t.Errorf("Expected commitIndex to be %d. Got %d", expectedCommitIndex, server.commitIndex)
+		}
+	})
+
+	t.Run("updates commitIndex when log at index is replicated by a majority of servers", func(t *testing.T) {
+		server.updateCommitIndexForLeader(7, "")
+
+		expectedCommitIndex := 2
+		if server.commitIndex != expectedCommitIndex {
+			t.Errorf("Expected commitIndex to be %d. Got %d", expectedCommitIndex, server.commitIndex)
 		}
 	})
 }

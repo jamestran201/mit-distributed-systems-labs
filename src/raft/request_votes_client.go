@@ -63,7 +63,7 @@ func (rf *Raft) makeRequestVotesArgs() *RequestVoteArgs {
 //
 // look at the comments in ../labrpc/labrpc.go for more details.
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	debugLogPlain(rf, fmt.Sprintf("Sending RequestVote to %d", server))
+	debugLogForRequestPlain(rf, args.TraceId, fmt.Sprintf("Sending RequestVote to %d", server))
 
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
