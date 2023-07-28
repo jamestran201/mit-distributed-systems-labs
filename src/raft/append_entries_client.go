@@ -43,7 +43,6 @@ func (rf *Raft) callAppendEntries(server int, traceId string) {
 	rf.handleAppendEntriesResponse(server, args, reply)
 }
 
-// TODO: Add tests for this
 func (rf *Raft) makeAppendEntriesArgs(server int, traceId string) *AppendEntriesArgs {
 	prevLogIndex := rf.nextIndex[server] - 1
 

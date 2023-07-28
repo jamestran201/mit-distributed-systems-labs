@@ -5,6 +5,75 @@ import (
 	"testing"
 )
 
+func TestRaft_makeAppendEntriesArgs(t *testing.T) {
+	t.Run("Returns correct args when follower is up-to-date", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.state = LEADER
+		server.currentTerm = 1
+		server.lastLogIndex = 2
+		server.lastLogTerm = 1
+		server.logs = []LogEntry{
+			{nil, 0},
+			{"foo", 1},
+			{"bar", 1},
+		}
+		server.nextIndex = []int{0, 3}
+		server.commitIndex = 0
+
+		args := server.makeAppendEntriesArgs(1, "abc")
+
+		expectedArgs := &AppendEntriesArgs{
+			Term:         1,
+			LeaderId:     0,
+			PrevLogIndex: 2,
+			PrevLogTerm:  1,
+			Entries:      []LogEntry{},
+			LeaderCommit: 0,
+			TraceId:      "abc",
+		}
+		if !reflect.DeepEqual(args, expectedArgs) {
+			t.Errorf("Expected args to be %+v. Got %+v", expectedArgs, args)
+		}
+	})
+
+	t.Run("Returns correct args when new logs need to be sent to follower", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.state = LEADER
+		server.currentTerm = 2
+		server.lastLogIndex = 3
+		server.lastLogTerm = 2
+		server.logs = []LogEntry{
+			{nil, 0},
+			{"foo", 1},
+			{"bar", 1},
+			{"baz", 2},
+		}
+		server.nextIndex = []int{0, 3}
+		server.commitIndex = 0
+
+		args := server.makeAppendEntriesArgs(1, "abc")
+
+		expectedArgs := &AppendEntriesArgs{
+			Term:         2,
+			LeaderId:     0,
+			PrevLogIndex: 2,
+			PrevLogTerm:  1,
+			Entries:      []LogEntry{{"baz", 2}},
+			LeaderCommit: 0,
+			TraceId:      "abc",
+		}
+		if !reflect.DeepEqual(args, expectedArgs) {
+			t.Errorf("Expected args to be %+v. Got %+v", expectedArgs, args)
+		}
+	})
+}
+
 func TestRaft_handleAppendEntriesResponse(t *testing.T) {
 	t.Run("Aborts when server state has changed from when the request was made", func(t *testing.T) {
 		cfg := make_config(t, 1, false, false)
