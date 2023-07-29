@@ -41,9 +41,11 @@ func (rf *Raft) callRequestVotes(term, server int) {
 
 func (rf *Raft) makeRequestVotesArgs() *RequestVoteArgs {
 	args := &RequestVoteArgs{
-		Term:        rf.currentTerm,
-		CandidateId: rf.me,
-		TraceId:     generateTraceId(),
+		Term:         rf.currentTerm,
+		CandidateId:  rf.me,
+		LastLogIndex: rf.lastLogIndex,
+		LastLogTerm:  rf.lastLogTerm,
+		TraceId:      generateTraceId(),
 	}
 
 	return args
