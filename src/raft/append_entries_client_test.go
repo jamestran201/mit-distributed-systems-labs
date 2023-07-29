@@ -223,9 +223,9 @@ func Test_updateCommitIndexForLeader(t *testing.T) {
 	server.state = LEADER
 	server.currentTerm = 5
 	server.commitIndex = 2
-	server.lastLogIndex = 7
+	server.lastLogIndex = 9
 	server.lastLogTerm = 5
-	server.matchIndex = []int{0, 8, 1, 2, 7}
+	server.matchIndex = []int{0, 8, 1, 2, 8}
 	server.logs = []LogEntry{
 		{nil, 0},
 		{"foo", 1},
@@ -236,6 +236,7 @@ func Test_updateCommitIndexForLeader(t *testing.T) {
 		{"corge", 4},
 		{"grault", 5},
 		{"garply", 5},
+		{"burly", 5},
 	}
 
 	t.Run("no-ops when index is not higher than commitIndex", func(t *testing.T) {
@@ -257,7 +258,7 @@ func Test_updateCommitIndexForLeader(t *testing.T) {
 	})
 
 	t.Run("no-ops when log at index is not replicated by a majority of servers", func(t *testing.T) {
-		server.updateCommitIndexForLeader(8, "")
+		server.updateCommitIndexForLeader(9, "")
 
 		expectedCommitIndex := 2
 		if server.commitIndex != expectedCommitIndex {
@@ -266,9 +267,9 @@ func Test_updateCommitIndexForLeader(t *testing.T) {
 	})
 
 	t.Run("updates commitIndex when log at index is replicated by a majority of servers", func(t *testing.T) {
-		server.updateCommitIndexForLeader(7, "")
+		server.updateCommitIndexForLeader(8, "")
 
-		expectedCommitIndex := 2
+		expectedCommitIndex := 8
 		if server.commitIndex != expectedCommitIndex {
 			t.Errorf("Expected commitIndex to be %d. Got %d", expectedCommitIndex, server.commitIndex)
 		}

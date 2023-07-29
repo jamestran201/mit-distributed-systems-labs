@@ -2,7 +2,7 @@ package raft
 
 import "fmt"
 
-func (rf *Raft) callAppendEntries(server int, traceId string) {
+func (rf *Raft) callAppendEntries(server int, traceId string, isHearbeat bool) {
 	var args *AppendEntriesArgs
 
 	shouldExit := false
@@ -19,8 +19,7 @@ func (rf *Raft) callAppendEntries(server int, traceId string) {
 			return
 		}
 
-		// TODO: Look into how this should work
-		if rf.lastLogIndex < rf.nextIndex[server] {
+		if !isHearbeat && rf.lastLogIndex < rf.nextIndex[server] {
 			debugLog(rf, "Follower logs are up to date, aborting callAppendEntries routine.")
 			shouldExit = true
 			return
@@ -114,7 +113,7 @@ func (rf *Raft) handleAppendEntriesResponse(server int, args *AppendEntriesArgs,
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Received failed AppendEntries response from %d", server))
 
 		rf.nextIndex[server]--
-		go rf.callAppendEntries(server, args.TraceId)
+		go rf.callAppendEntries(server, args.TraceId, false)
 	}
 }
 
@@ -139,7 +138,7 @@ func (rf *Raft) updateCommitIndexForLeader(index int, traceId string) {
 		}
 	}
 
-	if replicatedCount > rf.majorityCount() {
+	if replicatedCount >= rf.majorityCount() {
 		rf.commitIndex = index
 		debugLogForRequest(rf, traceId, fmt.Sprintf("Commit index updated for leader to %d. Logs %v.", rf.commitIndex, rf.logs))
 
