@@ -142,6 +142,6 @@ func (rf *Raft) updateCommitIndexForLeader(index int, traceId string) {
 		rf.commitIndex = index
 		debugLogForRequest(rf, traceId, fmt.Sprintf("Commit index updated for leader to %d. Logs %v.", rf.commitIndex, rf.logs))
 
-		rf.applyCond.Signal()
+		go rf.applyLogs()
 	}
 }

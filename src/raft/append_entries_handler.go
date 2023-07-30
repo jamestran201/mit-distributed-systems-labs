@@ -56,7 +56,7 @@ func (rf *Raft) handleAppendEntries(args *AppendEntriesArgs, reply *AppendEntrie
 		rf.commitIndex = newCommitIndex
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Updated commitIndex to %d. Logs: %+v", newCommitIndex, rf.logs))
 
-		rf.applyCond.Signal()
+		go rf.applyLogs()
 	}
 
 	reply.Term = rf.currentTerm

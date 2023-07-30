@@ -2,7 +2,6 @@ package raft
 
 import (
 	"testing"
-	"time"
 )
 
 func Test_applyLogs(t *testing.T) {
@@ -26,13 +25,7 @@ func Test_applyLogs(t *testing.T) {
 		server.lastApplied = 1
 		server.applyCh = applyCh
 
-		go server.applyLogs()
-
-		time.Sleep(2 * time.Second)
-		server.applyCond.Signal()
-
-		time.Sleep(2 * time.Second)
-		server.Kill()
+		server.applyLogs()
 
 		expectedMsg := []ApplyMsg{
 			{true, "shoo", 2, false, nil, 0, 0},
@@ -70,13 +63,7 @@ func Test_applyLogs(t *testing.T) {
 		server.lastApplied = 3
 		server.applyCh = applyCh
 
-		go server.applyLogs()
-
-		time.Sleep(2 * time.Second)
-		server.applyCond.Signal()
-
-		time.Sleep(2 * time.Second)
-		server.Kill()
+		server.applyLogs()
 
 		if len(applyCh) != 0 {
 			t.Errorf("Expected applyCh to be empty. Got %+v", applyCh)

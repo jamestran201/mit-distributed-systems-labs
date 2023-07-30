@@ -63,7 +63,7 @@ type LogEntry struct {
 // A Go object implementing a single Raft peer.
 type Raft struct {
 	applyCh   chan ApplyMsg
-	applyCond sync.Cond
+	applyMu   sync.Mutex
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
@@ -194,7 +194,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
 
-	rf.applyCond.Signal() // wake up the applyLogs goroutine so that it exits
 	debugLogPlain(rf, "Server is killed")
 }
 
@@ -228,7 +227,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{
 		applyCh:                       applyCh,
-		applyCond:                     *sync.NewCond(&sync.Mutex{}),
 		commitIndex:                   0,
 		currentTerm:                   0,
 		me:                            me,
@@ -250,9 +248,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// start ticker goroutine to start elections
 	go rf.electionTimer()
-
-	// start goroutine to apply logs
-	go rf.applyLogs()
 
 	return rf
 }
