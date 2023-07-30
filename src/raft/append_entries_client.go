@@ -2,7 +2,7 @@ package raft
 
 import "fmt"
 
-func (rf *Raft) callAppendEntries(server int) {
+func (rf *Raft) callAppendEntries(server int, traceId string, isHearbeat bool) {
 	var args *AppendEntriesArgs
 
 	shouldExit := false
@@ -19,7 +19,13 @@ func (rf *Raft) callAppendEntries(server int) {
 			return
 		}
 
-		args = rf.makeAppendEntriesArgs()
+		if !isHearbeat && rf.lastLogIndex < rf.nextIndex[server] {
+			debugLog(rf, "Follower logs are up to date, aborting callAppendEntries routine.")
+			shouldExit = true
+			return
+		}
+
+		args = rf.makeAppendEntriesArgs(server, traceId)
 	})
 
 	if shouldExit {
@@ -36,18 +42,41 @@ func (rf *Raft) callAppendEntries(server int) {
 	rf.handleAppendEntriesResponse(server, args, reply)
 }
 
-func (rf *Raft) makeAppendEntriesArgs() *AppendEntriesArgs {
+func (rf *Raft) makeAppendEntriesArgs(server int, traceId string) *AppendEntriesArgs {
+	prevLogIndex := rf.nextIndex[server] - 1
+
+	if prevLogIndex < 0 {
+		debugLog(rf, fmt.Sprintf("WARNING: prevLogIndex is %d, but should be >= 0. This is not right. Server: %d. NextIndex: %+v", prevLogIndex, server, rf.nextIndex))
+		panic(1)
+	}
+
+	prevLogTerm := rf.logs[prevLogIndex].Term
+
+	entries := []LogEntry{}
+	for i := prevLogIndex + 1; i <= rf.lastLogIndex; i++ {
+		entry := LogEntry{Command: rf.logs[i].Command, Term: rf.logs[i].Term}
+		entries = append(entries, entry)
+	}
+
+	if traceId == "" {
+		traceId = generateTraceId()
+	}
+
 	args := &AppendEntriesArgs{
-		Term:     rf.currentTerm,
-		LeaderId: rf.me,
-		TraceId:  generateTraceId(),
+		Term:         rf.currentTerm,
+		LeaderId:     rf.me,
+		PrevLogIndex: prevLogIndex,
+		PrevLogTerm:  prevLogTerm,
+		Entries:      entries,
+		LeaderCommit: rf.commitIndex,
+		TraceId:      traceId,
 	}
 
 	return args
 }
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	debugLogPlain(rf, fmt.Sprintf("Sending AppendEntries to %d", server))
+	debugLogForRequestPlain(rf, args.TraceId, fmt.Sprintf("Sending AppendEntries to %d. Args: %+v", server, args))
 
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	return ok
@@ -65,9 +94,66 @@ func (rf *Raft) handleAppendEntriesResponse(server int, args *AppendEntriesArgs,
 	}
 
 	if reply.Term > rf.currentTerm {
-		debugLogForRequest(rf, args.TraceId, "Received Append response from server with higher term. Reset state to follower")
+		debugLogForRequest(rf, args.TraceId, "Received AppendEntries response from server with higher term. Reset state to follower")
 
 		rf.resetToFollower(reply.Term)
 		return
+	}
+
+	if reply.Success {
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Received successful AppendEntries response from %d", server))
+
+		rf.nextIndex[server] = args.PrevLogIndex + len(args.Entries) + 1
+		rf.matchIndex[server] = rf.nextIndex[server] - 1
+
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Updated nextIndex to %d and matchIndex to %d", rf.nextIndex[server], rf.matchIndex[server]))
+
+		rf.updateCommitIndexForLeader(rf.matchIndex[server], args.TraceId)
+	} else {
+		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Received failed AppendEntries response from %d", server))
+
+		if reply.ConflictIndex > 0 && reply.ConflictIndex <= rf.lastLogIndex {
+			if reply.ConflictIndex == 1 {
+				rf.nextIndex[server] = 1
+			} else {
+				rf.nextIndex[server] = reply.ConflictIndex - 1
+			}
+		} else if reply.ConflictIndex == 0 {
+			rf.nextIndex[server] = 1
+		} else {
+			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("WARNING: ConflictIndex is %d, but should be between 0 and %d. This is not right", reply.ConflictIndex, rf.lastLogIndex))
+			panic(1)
+		}
+
+		go rf.callAppendEntries(server, args.TraceId, false)
+	}
+}
+
+func (rf *Raft) updateCommitIndexForLeader(index int, traceId string) {
+	if index <= rf.commitIndex {
+		return
+	}
+
+	if rf.logs[index].Term != rf.currentTerm {
+		return
+	}
+
+	// start at 1 because we know that the current server already has a log at index based on the condition above
+	replicatedCount := 1
+	for s := range rf.peers {
+		if s == rf.me {
+			continue
+		}
+
+		if rf.matchIndex[s] >= index {
+			replicatedCount++
+		}
+	}
+
+	if replicatedCount >= rf.majorityCount() {
+		rf.commitIndex = index
+		debugLogForRequest(rf, traceId, fmt.Sprintf("Commit index updated for leader to %d. Logs %v.", rf.commitIndex, rf.logs))
+
+		go rf.applyLogs()
 	}
 }

@@ -20,6 +20,7 @@ package raft
 import (
 	//	"bytes"
 
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -54,8 +55,15 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
+type LogEntry struct {
+	Command interface{}
+	Term    int
+}
+
 // A Go object implementing a single Raft peer.
 type Raft struct {
+	applyCh   chan ApplyMsg
+	applyMu   sync.Mutex
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
@@ -66,13 +74,13 @@ type Raft struct {
 	currentTerm int
 	state       string
 	votedFor    int
-	// logs []LogEntry
+	logs        []LogEntry
 
 	// Volatile states
-	// commitIndex int
-	// lastApplied int
-	lastLogIndex int
-	// lastLogTerm                   int
+	commitIndex                   int
+	lastApplied                   int
+	lastLogIndex                  int
+	lastLogTerm                   int
 	receivedRpcFromPeer           bool
 	votesReceived                 int
 	requestVotesResponsesReceived int
@@ -159,13 +167,19 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
-	// Your code here (2B).
+	if rf.state != LEADER {
+		return -1, -1, false
+	}
 
-	return index, term, isLeader
+	index := rf.appendLogEntry(command)
+	debugLog(rf, fmt.Sprintf("Received command from client. Last log index: %d. Last log term: %d", rf.lastLogIndex, rf.lastLogTerm))
+
+	rf.replicateLogs()
+
+	return index, rf.currentTerm, true
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -179,7 +193,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // should call killed() to check whether it should stop.
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
-	// Your code here, if desired.
+
+	debugLogPlain(rf, "Server is killed")
 }
 
 func (rf *Raft) killed() bool {
@@ -211,9 +226,14 @@ func (rf *Raft) majorityCount() int {
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	rf := &Raft{
+		applyCh:                       applyCh,
+		commitIndex:                   0,
 		currentTerm:                   0,
 		me:                            me,
+		lastApplied:                   0,
 		lastLogIndex:                  0,
+		lastLogTerm:                   0,
+		logs:                          []LogEntry{{Command: nil, Term: 0}},
 		peers:                         peers,
 		persister:                     persister,
 		receivedRpcFromPeer:           false,
