@@ -94,7 +94,7 @@ func (rf *Raft) handleAppendEntriesResponse(server int, args *AppendEntriesArgs,
 	}
 
 	if reply.Term > rf.currentTerm {
-		debugLogForRequest(rf, args.TraceId, "Received Append response from server with higher term. Reset state to follower")
+		debugLogForRequest(rf, args.TraceId, "Received AppendEntries response from server with higher term. Reset state to follower")
 
 		rf.resetToFollower(reply.Term)
 		return
@@ -112,7 +112,19 @@ func (rf *Raft) handleAppendEntriesResponse(server int, args *AppendEntriesArgs,
 	} else {
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Received failed AppendEntries response from %d", server))
 
-		rf.nextIndex[server]--
+		if reply.ConflictIndex > 0 && reply.ConflictIndex <= rf.lastLogIndex {
+			if reply.ConflictIndex == 1 {
+				rf.nextIndex[server] = 1
+			} else {
+				rf.nextIndex[server] = reply.ConflictIndex - 1
+			}
+		} else if reply.ConflictIndex == 0 {
+			rf.nextIndex[server] = 1
+		} else {
+			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("WARNING: ConflictIndex is %d, but should be between 0 and %d. This is not right", reply.ConflictIndex, rf.lastLogIndex))
+			panic(1)
+		}
+
 		go rf.callAppendEntries(server, args.TraceId, false)
 	}
 }

@@ -59,6 +59,16 @@ func TestRejection(t *testing.T) {
 		if reply.Success != expectedSuccess {
 			t.Errorf("Expected success to be %v. Got %v", expectedSuccess, reply.Success)
 		}
+
+		expectedConflictIndex := 1
+		expectedConflictTerm := 2
+		if reply.ConflictIndex != expectedConflictIndex {
+			t.Errorf("Expected conflict index to be %d. Got %d", expectedConflictIndex, reply.ConflictIndex)
+		}
+
+		if reply.ConflictTerm != expectedConflictTerm {
+			t.Errorf("Expected conflict term to be %d. Got %d", expectedConflictTerm, reply.ConflictTerm)
+		}
 	})
 
 	t.Run("Rejects when terms do not match", func(t *testing.T) {
@@ -70,14 +80,16 @@ func TestRejection(t *testing.T) {
 		server.logs = []LogEntry{
 			{nil, 0},
 			{"foo", 2},
+			{"foo", 2},
+			{"foo", 2},
 		}
-		server.lastLogIndex = 1
+		server.lastLogIndex = 3
 		server.lastLogTerm = 2
 
 		args := &AppendEntriesArgs{
 			Term:         2,
 			LeaderId:     1,
-			PrevLogIndex: 1,
+			PrevLogIndex: 3,
 			PrevLogTerm:  8,
 		}
 		reply := &AppendEntriesReply{}
@@ -87,6 +99,16 @@ func TestRejection(t *testing.T) {
 		expectedSuccess := false
 		if reply.Success != expectedSuccess {
 			t.Errorf("Expected success to be %v. Got %v", expectedSuccess, reply.Success)
+		}
+
+		expectedConflictIndex := 1
+		expectedConflictTerm := 2
+		if reply.ConflictIndex != expectedConflictIndex {
+			t.Errorf("Expected conflict index to be %d. Got %d", expectedConflictIndex, reply.ConflictIndex)
+		}
+
+		if reply.ConflictTerm != expectedConflictTerm {
+			t.Errorf("Expected conflict term to be %d. Got %d", expectedConflictTerm, reply.ConflictTerm)
 		}
 	})
 }

@@ -139,6 +139,116 @@ func Test_hasLogWithIndexAndTerm(t *testing.T) {
 	})
 }
 
+func TestRaft_findConflictIndexAndTerm(t *testing.T) {
+	t.Run("When reason is no_logs_at_index, and server has some logs", func(t *testing.T) {
+		rf := &Raft{
+			currentTerm: 8,
+			logs: []LogEntry{
+				{Command: nil, Term: 0},
+				{Command: "foo", Term: 2},
+				{Command: "bar", Term: 2},
+				{Command: "baz", Term: 5},
+				{Command: "boo", Term: 5},
+				{Command: "bee", Term: 7},
+				{Command: "hoo", Term: 7},
+				{Command: "zoo", Term: 7},
+			},
+			lastLogIndex: 7,
+			lastLogTerm:  7,
+		}
+
+		index, term := rf.findConflictIndexAndTerm("no_logs_at_index", 8, 8)
+
+		if index != 5 {
+			t.Errorf("Expected index to be %d. Got %d", 5, index)
+		}
+
+		if term != 7 {
+			t.Errorf("Expected term to be %d. Got %d", 7, term)
+		}
+	})
+
+	t.Run("When reason is no_logs_at_index, and server has no logs", func(t *testing.T) {
+		rf := &Raft{
+			currentTerm: 8,
+			logs:        []LogEntry{{Command: nil, Term: 0}},
+		}
+		rf.lastLogIndex = 0
+		rf.lastLogTerm = 0
+
+		index, term := rf.findConflictIndexAndTerm("no_logs_at_index", 8, 8)
+
+		if index != 0 {
+			t.Errorf("Expected index to be %d. Got %d", 0, index)
+		}
+
+		if term != 0 {
+			t.Errorf("Expected term to be %d. Got %d", 0, term)
+		}
+	})
+
+	t.Run("When reason is terms_do_not_match, and server has log at prevLogIndex", func(t *testing.T) {
+		rf := &Raft{
+			currentTerm: 8,
+			logs: []LogEntry{
+				{Command: nil, Term: 0},
+				{Command: "foo", Term: 2},
+				{Command: "bar", Term: 2},
+				{Command: "baz", Term: 5},
+				{Command: "boo", Term: 5},
+				{Command: "bee", Term: 7},
+				{Command: "hoo", Term: 7},
+				{Command: "zoo", Term: 7},
+			},
+			lastLogIndex: 7,
+			lastLogTerm:  7,
+		}
+
+		index, term := rf.findConflictIndexAndTerm("terms_do_not_match", 7, 8)
+
+		if index != 5 {
+			t.Errorf("Expected index to be %d. Got %d", 5, index)
+		}
+
+		if term != 7 {
+			t.Errorf("Expected term to be %d. Got %d", 7, term)
+		}
+	})
+
+	t.Run("When reason is terms_do_not_match, and server has more logs than prevLogIndex", func(t *testing.T) {
+		rf := &Raft{
+			currentTerm: 8,
+			logs: []LogEntry{
+				{Command: nil, Term: 0},
+				{Command: "foo", Term: 2},
+				{Command: "bar", Term: 2},
+				{Command: "baz", Term: 5},
+				{Command: "boo", Term: 5},
+				{Command: "moo", Term: 5},
+				{Command: "io", Term: 5},
+				{Command: "bee", Term: 7},
+				{Command: "hoo", Term: 7},
+				{Command: "zoo", Term: 7},
+				{Command: "loo", Term: 7},
+				{Command: "croo", Term: 7},
+				{Command: "too", Term: 7},
+			},
+			lastLogIndex: 12,
+			lastLogTerm:  7,
+		}
+
+		index, term := rf.findConflictIndexAndTerm("terms_do_not_match", 9, 8)
+
+		if index != 7 {
+			t.Errorf("Expected index to be %d. Got %d", 7, index)
+		}
+
+		if term != 7 {
+			t.Errorf("Expected term to be %d. Got %d", 7, term)
+		}
+	})
+}
+
 func Test_findFirstConflictIndex(t *testing.T) {
 	t.Run("Returns -1 for both indices when server already contains the new entries", func(t *testing.T) {
 		rf := &Raft{

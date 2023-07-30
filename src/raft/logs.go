@@ -28,6 +28,26 @@ func (rf *Raft) hasLogWithIndexAndTerm(index, term int) (bool, string) {
 	}
 }
 
+func (rf *Raft) findConflictIndexAndTerm(reason string, prevLogIndex, prevLogTerm int) (int, int) {
+	index := -1
+	if reason == "no_logs_at_index" {
+		index = rf.lastLogIndex
+	} else {
+		index = prevLogIndex
+	}
+
+	term := rf.logs[index].Term
+	for i := index - 1; i >= 0; i-- {
+		if rf.logs[i].Term != term {
+			break
+		}
+
+		index = i
+	}
+
+	return index, term
+}
+
 func (rf *Raft) findFirstConflictIndex(args *AppendEntriesArgs) (int, int) {
 	conflictIndex := -1
 	firstNewIndex := -1

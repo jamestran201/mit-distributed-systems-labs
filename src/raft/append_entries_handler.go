@@ -40,8 +40,12 @@ func (rf *Raft) handleAppendEntries(args *AppendEntriesArgs, reply *AppendEntrie
 			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Rejected AppendEntries from %d because terms do not match. PrevLogIndex: %d. PrevLogTerm: %d", args.LeaderId, args.PrevLogIndex, args.PrevLogTerm))
 		}
 
+		index, term := rf.findConflictIndexAndTerm(reason, args.PrevLogIndex, args.PrevLogTerm)
+
 		reply.Term = rf.currentTerm
 		reply.Success = false
+		reply.ConflictIndex = index
+		reply.ConflictTerm = term
 		return
 	}
 

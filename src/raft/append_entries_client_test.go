@@ -136,30 +136,98 @@ func TestRaft_handleAppendEntriesResponse(t *testing.T) {
 		}
 	})
 
-	t.Run("Decrements nextIndex and retries when result is not successful", func(t *testing.T) {
+	t.Run("Set nextIndex to reply.ConflictIndex-1 when reply.ConflictIndex is greater than 0", func(t *testing.T) {
 		cfg := make_config(t, 1, false, false)
 		defer cfg.cleanup()
 
 		server := cfg.rafts[0]
 		server.state = LEADER
 		server.currentTerm = 2
-		server.nextIndex = []int{0, 3}
+		server.nextIndex = []int{0, 7}
+		server.lastLogIndex = 7
+		server.lastLogTerm = 2
 
 		args := &AppendEntriesArgs{
 			Term:         2,
 			LeaderId:     0,
-			PrevLogIndex: 2,
-			PrevLogTerm:  1,
+			PrevLogIndex: 6,
+			PrevLogTerm:  2,
 			Entries:      []LogEntry{},
 			LeaderCommit: 0,
 		}
 		reply := &AppendEntriesReply{
-			Term:    2,
-			Success: false,
+			Term:          2,
+			Success:       false,
+			ConflictIndex: 5,
+			ConflictTerm:  1,
 		}
 		server.handleAppendEntriesResponse(1, args, reply)
 
-		expectedNextIndex := 2
+		expectedNextIndex := 4
+		if server.nextIndex[1] != expectedNextIndex {
+			t.Errorf("Expected nextIndex to be %d. Got %d", expectedNextIndex, server.nextIndex[1])
+		}
+	})
+
+	t.Run("Set nextIndex to 1 when reply.ConflictIndex is 1", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.state = LEADER
+		server.currentTerm = 2
+		server.nextIndex = []int{0, 7}
+		server.lastLogIndex = 7
+		server.lastLogTerm = 2
+
+		args := &AppendEntriesArgs{
+			Term:         2,
+			LeaderId:     0,
+			PrevLogIndex: 6,
+			PrevLogTerm:  2,
+			Entries:      []LogEntry{},
+			LeaderCommit: 0,
+		}
+		reply := &AppendEntriesReply{
+			Term:          2,
+			Success:       false,
+			ConflictIndex: 1,
+			ConflictTerm:  1,
+		}
+		server.handleAppendEntriesResponse(1, args, reply)
+
+		expectedNextIndex := 1
+		if server.nextIndex[1] != expectedNextIndex {
+			t.Errorf("Expected nextIndex to be %d. Got %d", expectedNextIndex, server.nextIndex[1])
+		}
+	})
+
+	t.Run("Set nextIndex to 1 when reply.ConflictIndex is 0", func(t *testing.T) {
+		cfg := make_config(t, 1, false, false)
+		defer cfg.cleanup()
+
+		server := cfg.rafts[0]
+		server.state = LEADER
+		server.currentTerm = 2
+		server.nextIndex = []int{0, 7}
+
+		args := &AppendEntriesArgs{
+			Term:         2,
+			LeaderId:     0,
+			PrevLogIndex: 6,
+			PrevLogTerm:  2,
+			Entries:      []LogEntry{},
+			LeaderCommit: 0,
+		}
+		reply := &AppendEntriesReply{
+			Term:          2,
+			Success:       false,
+			ConflictIndex: 0,
+			ConflictTerm:  0,
+		}
+		server.handleAppendEntriesResponse(1, args, reply)
+
+		expectedNextIndex := 1
 		if server.nextIndex[1] != expectedNextIndex {
 			t.Errorf("Expected nextIndex to be %d. Got %d", expectedNextIndex, server.nextIndex[1])
 		}
