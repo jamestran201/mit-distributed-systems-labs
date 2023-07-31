@@ -54,6 +54,8 @@ func (rf *Raft) startElection() {
 	rf.votesReceived = 1
 	rf.requestVotesResponsesReceived = 0
 
+	rf.persist()
+
 	go rf.requestVotesFromPeers(rf.currentTerm)
 }
 

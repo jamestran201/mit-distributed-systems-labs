@@ -77,11 +77,13 @@ func (rf *Raft) resolveConflictAndAppendNewLogs(args *AppendEntriesArgs) {
 	if conflictIndex != -1 {
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Deleting logs from index %d because of conflict with leader", conflictIndex))
 
-		res := rf.deleteAllLogsFrom(conflictIndex)
-		if res != nil {
-			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Error deleting logs from index %d. Error: %s", conflictIndex, res.Error()))
+		err := rf.deleteAllLogsFrom(conflictIndex)
+		if err != nil {
+			debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Error deleting logs from index %d. Error: %s", conflictIndex, err.Error()))
 			panic(1)
 		}
+
+		rf.persist()
 	} else {
 		debugLogForRequest(rf, args.TraceId, "No conflict with leader")
 	}
@@ -90,8 +92,9 @@ func (rf *Raft) resolveConflictAndAppendNewLogs(args *AppendEntriesArgs) {
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Appending new entries from index %d in args.Entries", firstNewIndex))
 
 		rf.appendNewEntries(args, firstNewIndex)
-
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("New logs: %+v", rf.logs))
+
+		rf.persist()
 	} else {
 		debugLogForRequest(rf, args.TraceId, "No new entries to append")
 	}
