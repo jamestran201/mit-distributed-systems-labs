@@ -18,13 +18,12 @@ package raft
 //
 
 import (
-	//	"bytes"
-
+	"bytes"
 	"fmt"
 	"sync"
 	"sync/atomic"
 
-	//	"6.5840/labgob"
+	"6.5840/labgob"
 	"6.5840/labrpc"
 )
 
@@ -72,7 +71,6 @@ type Raft struct {
 
 	// Persistent states
 	currentTerm int
-	state       string
 	votedFor    int
 	logs        []LogEntry
 
@@ -82,6 +80,7 @@ type Raft struct {
 	lastLogIndex                  int
 	lastLogTerm                   int
 	receivedRpcFromPeer           bool
+	state                         string
 	votesReceived                 int
 	requestVotesResponsesReceived int
 
@@ -99,42 +98,63 @@ func (rf *Raft) GetState() (int, bool) {
 	return rf.currentTerm, rf.state == LEADER
 }
 
-// save Raft's persistent state to stable storage,
-// where it can later be retrieved after a crash and restart.
-// see paper's Figure 2 for a description of what should be persistent.
 // before you've implemented snapshots, you should pass nil as the
 // second argument to persister.Save().
 // after you've implemented snapshots, pass the current snapshot
 // (or nil if there's not yet a snapshot).
 func (rf *Raft) persist() {
-	// Your code here (2C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// raftstate := w.Bytes()
-	// rf.persister.Save(raftstate, nil)
+	l := rf.cloneLogs(len(rf.logs))
+	ps := PersistedState{
+		CurrentTerm: rf.currentTerm,
+		Logs:        l,
+		VotedFor:    rf.votedFor,
+	}
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	err := e.Encode(ps)
+	if err != nil {
+		panic(err)
+	}
+
+	raftstate := w.Bytes()
+	rf.persister.Save(raftstate, nil)
+
+	debugLog(rf, fmt.Sprintf("Persisted state: %+v", ps))
 }
 
 // restore previously persisted state.
 func (rf *Raft) readPersist(data []byte) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	if data == nil || len(data) < 1 { // bootstrap without any state?
+		debugLog(rf, "No persisted state found")
 		return
 	}
-	// Your code here (2C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+
+	var ps PersistedState
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	err := d.Decode(&ps)
+	if err != nil {
+		panic(err)
+	}
+
+	debugLog(rf, fmt.Sprintf("Read persisted state: %+v", ps))
+
+	rf.currentTerm = ps.CurrentTerm
+	rf.votedFor = ps.VotedFor
+
+	logLength := len(ps.Logs)
+	clonedLogs := make([]LogEntry, logLength)
+	for i := 0; i < logLength; i++ {
+		clonedLogs[i] = LogEntry{Command: ps.Logs[i].Command, Term: ps.Logs[i].Term}
+	}
+	rf.logs = clonedLogs
+	rf.lastLogIndex = logLength - 1
+	rf.lastLogTerm = rf.logs[rf.lastLogIndex].Term
+
+	debugLog(rf, fmt.Sprintf("Restored server state. Logs: %+v", rf.logs))
 }
 
 // the service says it has created a snapshot that has
@@ -177,6 +197,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := rf.appendLogEntry(command)
 	debugLog(rf, fmt.Sprintf("Received command from client. Last log index: %d. Last log term: %d", rf.lastLogIndex, rf.lastLogTerm))
 
+	rf.persist()
 	rf.replicateLogs()
 
 	return index, rf.currentTerm, true
@@ -208,6 +229,8 @@ func (rf *Raft) resetToFollower(term int) {
 	rf.state = FOLLOWER
 	rf.votedFor = -1
 	rf.votesReceived = 0
+
+	rf.persist()
 }
 
 func (rf *Raft) majorityCount() int {

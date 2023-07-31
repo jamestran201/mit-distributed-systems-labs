@@ -29,3 +29,9 @@ type AppendEntriesReply struct {
 	ConflictIndex int
 	ConflictTerm  int
 }
+
+type PersistedState struct {
+	CurrentTerm int
+	Logs        []LogEntry
+	VotedFor    int
+}

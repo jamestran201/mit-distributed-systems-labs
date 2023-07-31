@@ -31,6 +31,8 @@ func (rf *Raft) handleRequestVotes(args *RequestVoteArgs, reply *RequestVoteRepl
 		rf.votedFor = args.CandidateId
 		rf.receivedRpcFromPeer = true
 
+		rf.persist()
+
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = true
 		return
