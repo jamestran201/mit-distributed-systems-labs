@@ -26,7 +26,8 @@ func (rf *Raft) handleRequestVotes(args *RequestVoteArgs, reply *RequestVoteRepl
 		rf.resetToFollower(args.Term)
 	}
 
-	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && rf.isCandidateLogUpToDate(args) {
+	isCandidateLogUpToDate := rf.isCandidateLogUpToDate(args)
+	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && isCandidateLogUpToDate {
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Voted for %d", args.CandidateId))
 		rf.votedFor = args.CandidateId
 		rf.receivedRpcFromPeer = true
@@ -40,7 +41,7 @@ func (rf *Raft) handleRequestVotes(args *RequestVoteArgs, reply *RequestVoteRepl
 
 	if rf.votedFor != -1 && rf.votedFor != args.CandidateId {
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Rejected RequestVotes from %d because already voted for %d", args.CandidateId, rf.votedFor))
-	} else if !rf.isCandidateLogUpToDate(args) {
+	} else if !isCandidateLogUpToDate {
 		debugLogForRequest(rf, args.TraceId, fmt.Sprintf("Rejected RequestVotes from %d because candidate log is not up to date", args.CandidateId))
 	}
 
