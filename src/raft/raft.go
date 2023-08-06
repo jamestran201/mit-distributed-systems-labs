@@ -59,6 +59,12 @@ type LogEntry struct {
 	Term    int
 }
 
+type Snapshot struct {
+	LastIncludedIndex int
+	LastIncludedTerm  int
+	Data              []byte
+}
+
 // A Go object implementing a single Raft peer.
 type Raft struct {
 	applyCh   chan ApplyMsg
@@ -73,6 +79,7 @@ type Raft struct {
 	currentTerm int
 	votedFor    int
 	logs        []LogEntry
+	snapshot    *Snapshot
 
 	// Volatile states
 	commitIndex                   int
@@ -261,6 +268,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		persister:                     persister,
 		receivedRpcFromPeer:           false,
 		requestVotesResponsesReceived: 0,
+		snapshot:                      nil,
 		state:                         FOLLOWER,
 		votedFor:                      -1,
 		votesReceived:                 0,
